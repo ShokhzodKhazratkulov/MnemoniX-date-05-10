@@ -246,9 +246,16 @@ async function handleCheckTransaction(params: any, id: any, res: Response) {
     s = 2;
     performTime = new Date(payment.updated_at).getTime();
   } else if (payment.status === 'cancelled') {
-    s = (payment.cancel_reason >= 4) ? -2 : -1;
+    const cReason = Number(payment.cancel_reason || 0);
+    s = (cReason >= 4) ? -2 : -1;
     cancelTime = new Date(payment.updated_at).getTime();
-    reason = Number(payment.cancel_reason || 0);
+    reason = cReason;
+    
+    // Payme Sandbox fix: if state is -2 (performed then cancelled), 
+    // perform_time MUST NOT be 0. We'll use a placeholder timestamp.
+    if (s === -2) {
+      performTime = cancelTime - 1; 
+    }
   }
 
   return res.json({
@@ -276,9 +283,11 @@ async function handleGetStatement(params: any, id: any, res: Response) {
       s = 2;
       pt = new Date(p.updated_at).getTime();
     } else if (p.status === 'cancelled') {
-      s = (p.cancel_reason >= 4) ? -2 : -1;
+      const cReason = Number(p.cancel_reason || 0);
+      s = (cReason >= 4) ? -2 : -1;
       ct = new Date(p.updated_at).getTime();
-      r = Number(p.cancel_reason || 0);
+      r = cReason;
+      if (s === -2) pt = ct - 1;
     }
     
     return {
