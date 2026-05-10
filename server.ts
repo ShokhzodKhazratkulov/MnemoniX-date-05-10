@@ -87,12 +87,13 @@ app.post(["/api/payme", "/api/webhooks/payme"], async (req: Request, res: Respon
     });
   }
 
-  const expectedAuth = `Basic ${Buffer.from(`Paycom:${paymeKey}`).toString('base64')}`;
-  
-  if (!authHeader || authHeader.trim() !== expectedAuth) {
-    const received = authHeader ? `${authHeader.substring(0, 15)}...` : "none";
-    const expected = `${expectedAuth.substring(0, 15)}...`;
-    console.warn(`[Payme] Auth Failure. Method: ${method}, Expected: ${expected}, Received: ${received}`);
+  const expectedToken = Buffer.from(`Paycom:${paymeKey}`).toString('base64');
+  const receivedToken = (authHeader || "").split(/\s+/).pop() || "";
+
+  if (!authHeader || receivedToken !== expectedToken) {
+    const received = receivedToken ? `${receivedToken.substring(0, 10)}...` : "none";
+    const expected = `${expectedToken.substring(0, 10)}...`;
+    console.warn(`[Payme] Auth Failure. Method: ${method}, Expected Token: ${expected}, Received Token: ${received}`);
     
     return res.json({ 
       jsonrpc: "2.0", id, 
