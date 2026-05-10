@@ -1,0 +1,7 @@
+{
+  "name": "Remix: MnemoniX: Monetize app - payme start on 05/10",
+  "description": "Vocabulary learning app with premium features. Optimized for Hostinger Node.js deployment with integrated Payme payment handlers.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
