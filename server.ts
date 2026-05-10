@@ -144,10 +144,23 @@ async function handleCheckPerform(params: any, id: any, res: Response) {
   if (!payment) return res.json({ jsonrpc: "2.0", id, error: createError(-31050, "Order not found", "Buyurtma topilmadi", "Order not found", "order_id") });
   if (payment.status === 'paid') return res.json({ jsonrpc: "2.0", id, error: createError(-31050, "Already paid", "Allaqachon to'langan", "Already paid", "order_id") });
 
-  const expectedInTiyin = Number(payment.amount) * 100;
-  if (expectedInTiyin !== Number(amount)) return res.json({ jsonrpc: "2.0", id, error: createError(-31050, "Incorrect amount", "Noto'g'ri summa", "Incorrect amount", "amount") });
+  // User database already stores amount in Tiyin, so we compare directly
+  if (Number(payment.amount) !== Number(amount)) {
+    return res.json({ 
+      jsonrpc: "2.0", id, 
+      error: createError(-31050, "Incorrect amount", "Noto'g'ri summa", "Incorrect amount", "amount") 
+    });
+  }
 
-  return res.json({ jsonrpc: "2.0", id, result: { allow: true } });
+  return res.json({ 
+    jsonrpc: "2.0", id, 
+    result: { 
+      allow: true,
+      detail: {
+        receipt_type: 0 // Default receipt type
+      }
+    } 
+  });
 }
 
 async function handleCreateTransaction(params: any, id: any, res: Response) {
@@ -160,7 +173,14 @@ async function handleCreateTransaction(params: any, id: any, res: Response) {
 
   if (payment.payme_transaction_id === paymeId) {
     if (payment.status === 'cancelled') return res.json({ jsonrpc: "2.0", id, error: createError(-31008, "Cancelled", "Bekor qilingan", "Cancelled") });
-    return res.json({ jsonrpc: "2.0", id, result: { create_time: Number(payment.payme_time), transaction: payment.id.toString(), state: payment.status === 'paid' ? 2 : 1 } });
+    return res.json({ 
+      jsonrpc: "2.0", id, 
+      result: { 
+        create_time: Number(payment.payme_time), 
+        transaction: payment.id.toString(), 
+        state: payment.status === 'paid' ? 2 : 1 
+      } 
+    });
   }
 
   if (payment.payme_transaction_id) return res.json({ jsonrpc: "2.0", id, error: createError(-31099, "Occupied", "Band", "Occupied") });
@@ -218,17 +238,27 @@ async function handleCheckTransaction(params: any, id: any, res: Response) {
   if (!payment) return res.json({ jsonrpc: "2.0", id, error: createError(-31003, "Not found", "Topilmadi", "Not found") });
 
   let s = 1;
-  if (payment.status === 'paid') s = 2;
-  else if (payment.status === 'cancelled') s = (payment.cancel_reason >= 4) ? -2 : -1;
+  let performTime = 0;
+  let cancelTime = 0;
+  let reason = null;
+
+  if (payment.status === 'paid') {
+    s = 2;
+    performTime = new Date(payment.updated_at).getTime();
+  } else if (payment.status === 'cancelled') {
+    s = (payment.cancel_reason >= 4) ? -2 : -1;
+    cancelTime = new Date(payment.updated_at).getTime();
+    reason = Number(payment.cancel_reason || 0);
+  }
 
   return res.json({
     jsonrpc: "2.0", id, result: {
       create_time: Number(payment.payme_time || 0),
-      perform_time: payment.status === 'paid' ? new Date(payment.updated_at).getTime() : 0,
-      cancel_time: payment.status === 'cancelled' ? new Date(payment.updated_at).getTime() : 0,
+      perform_time: performTime,
+      cancel_time: cancelTime,
       transaction: payment.id.toString(),
       state: s,
-      reason: payment.cancel_reason || null
+      reason: reason
     }
   });
 }
@@ -238,12 +268,30 @@ async function handleGetStatement(params: any, id: any, res: Response) {
   const { data: ps } = await supabase.from('payments').select('*').gte('payme_time', from).lte('payme_time', to);
   const trans = (ps || []).map(p => {
     let s = 1;
-    if (p.status === 'paid') s = 2; else if (p.status === 'cancelled') s = (p.cancel_reason >= 4) ? -2 : -1;
+    let pt = 0;
+    let ct = 0;
+    let r = null;
+    
+    if (p.status === 'paid') {
+      s = 2;
+      pt = new Date(p.updated_at).getTime();
+    } else if (p.status === 'cancelled') {
+      s = (p.cancel_reason >= 4) ? -2 : -1;
+      ct = new Date(p.updated_at).getTime();
+      r = Number(p.cancel_reason || 0);
+    }
+    
     return {
-      id: p.payme_transaction_id, time: Number(p.payme_time), amount: Number(p.amount) * 100, account: { order_id: p.order_id },
-      create_time: Number(p.payme_time), perform_time: p.status === 'paid' ? new Date(p.updated_at).getTime() : 0,
-      cancel_time: p.status === 'cancelled' ? new Date(p.updated_at).getTime() : 0,
-      transaction: p.id.toString(), state: s, reason: p.cancel_reason || null
+      id: p.payme_transaction_id, 
+      time: Number(p.payme_time), 
+      amount: Number(p.amount), // Amount in tiyin from DB
+      account: { order_id: p.order_id },
+      create_time: Number(p.payme_time), 
+      perform_time: pt,
+      cancel_time: ct,
+      transaction: p.id.toString(), 
+      state: s, 
+      reason: r
     };
   });
   return res.json({ jsonrpc: "2.0", id, result: { transactions: trans } });
