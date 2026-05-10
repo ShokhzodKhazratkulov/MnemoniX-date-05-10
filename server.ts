@@ -44,7 +44,7 @@ app.get("/api/health", (req, res) => {
 
   const authHeader = req.headers.authorization || 
                     req.headers['x-authorization'] || 
-                    req.headers['http-authorization'];
+                    req.headers['http-authorization'] as string;
   
   res.json({ 
     status: "ok", 
@@ -52,9 +52,10 @@ app.get("/api/health", (req, res) => {
     port: PORT,
     paymeKeySet: !!paymeKey,
     paymeKeyLen: paymeKey.length,
-    paymeKeyFirst: paymeKey.substring(0, 3) + "...",
+    // This hex string helps identify invisible junk characters (like 0x20 spaces or 0x22 quotes)
+    paymeKeyHex: paymeKey.split('').map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join(' '),
     hasAuthHeader: !!authHeader,
-    authHeaderReceived: authHeader ? authHeader.substring(0, 15) + "..." : null
+    authHeaderReceived: authHeader ? `${authHeader.substring(0, 15)}...` : null
   });
 });
 
