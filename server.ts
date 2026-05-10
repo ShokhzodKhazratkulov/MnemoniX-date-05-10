@@ -41,6 +41,9 @@ function createError(code: number, ru: string, uz: string, en: string, data?: st
 app.get("/api/health", (req, res) => {
   let paymeKey = (process.env.PAYME_KEY || process.env.VITE_PAYME_KEY || "").trim();
   paymeKey = paymeKey.replace(/['"\s\r\n]/g, '');
+  paymeKey = paymeKey.replace(/\\%/g, '%');
+  paymeKey = paymeKey.replace(/\\&/g, '&');
+  paymeKey = paymeKey.replace(/\\\?/g, '?');
 
   const authHeader = req.headers.authorization || 
                     req.headers['x-authorization'] || 
@@ -52,8 +55,6 @@ app.get("/api/health", (req, res) => {
     port: PORT,
     paymeKeySet: !!paymeKey,
     paymeKeyLen: paymeKey.length,
-    // This hex string helps identify invisible junk characters (like 0x20 spaces or 0x22 quotes)
-    paymeKeyHex: paymeKey.split('').map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join(' '),
     hasAuthHeader: !!authHeader,
     authHeaderReceived: authHeader ? `${authHeader.substring(0, 15)}...` : null
   });
@@ -76,6 +77,11 @@ app.post(["/api/payme", "/api/webhooks/payme"], async (req: Request, res: Respon
   
   // Aggressive cleanup: remove all spaces, newlines, and quotes that panels often add
   paymeKey = paymeKey.replace(/['"\s\r\n]/g, '');
+  
+  // Hostinger/hPanel fix: unescape backslashed special characters (e.g. \% -> %)
+  paymeKey = paymeKey.replace(/\\%/g, '%');
+  paymeKey = paymeKey.replace(/\\&/g, '&');
+  paymeKey = paymeKey.replace(/\\\?/g, '?');
 
   if (!paymeKey) {
     console.error("[Payme] Error: PAYME_KEY is not defined in environment");
