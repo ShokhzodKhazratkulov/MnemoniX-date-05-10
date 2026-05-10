@@ -40,13 +40,18 @@ function createError(code: number, ru: string, uz: string, en: string, data?: st
 // API routes go here
 app.get("/api/health", (req, res) => {
   const authHeader = req.headers.authorization;
+  const paymeKey = (process.env.PAYME_KEY || process.env.VITE_PAYME_KEY || "").trim();
+  
   res.json({ 
     status: "ok", 
     environment: process.env.NODE_ENV, 
     port: PORT,
-    paymeKeySet: !!process.env.PAYME_KEY,
+    paymeKeySet: !!paymeKey,
+    paymeKeyLen: paymeKey.length,
+    paymeKeyFirst: paymeKey.substring(0, 3) + "...",
+    paymeKeyLast: "..." + paymeKey.substring(paymeKey.length - 3),
     hasAuthHeader: !!authHeader,
-    authHeaderPrefix: authHeader ? authHeader.substring(0, 10) : null
+    authHeaderReceived: authHeader ? authHeader.substring(0, 15) + "..." : null
   });
 });
 
