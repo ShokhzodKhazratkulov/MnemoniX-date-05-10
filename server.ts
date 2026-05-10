@@ -39,7 +39,15 @@ function createError(code: number, ru: string, uz: string, en: string, data?: st
 
 // API routes go here
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", environment: process.env.NODE_ENV, port: PORT });
+  const authHeader = req.headers.authorization;
+  res.json({ 
+    status: "ok", 
+    environment: process.env.NODE_ENV, 
+    port: PORT,
+    paymeKeySet: !!process.env.PAYME_KEY,
+    hasAuthHeader: !!authHeader,
+    authHeaderPrefix: authHeader ? authHeader.substring(0, 10) : null
+  });
 });
 
 // Payme Merchant API Handler
@@ -57,14 +65,18 @@ app.post(["/api/payme", "/api/webhooks/payme"], async (req: Request, res: Respon
   // Basic Auth Check
   const paymeKey = process.env.PAYME_KEY;
   if (!paymeKey) {
+    console.error("[Payme] Error: PAYME_KEY is not defined in environment");
     return res.json({ 
       jsonrpc: "2.0", id, 
       error: createError(-32504, "Ошибка конфигурации сервера", "Server konfiguratsiyasi xatosi", "Server configuration error")
     });
   }
 
-  const expectedAuth = `Basic ${Buffer.from(`Paycom:${paymeKey}`).toString('base64')}`;
-  if (!authHeader || authHeader !== expectedAuth) {
+  // Normalize authorization check
+  const expectedAuth = `Basic ${Buffer.from(`Paycom:${paymeKey.trim()}`).toString('base64')}`;
+  
+  if (!authHeader || authHeader.trim() !== expectedAuth) {
+    console.warn(`[Payme] Auth Failure. Expected prefix: ${expectedAuth.substring(0, 15)}... Received: ${authHeader ? authHeader.substring(0, 15) + '...' : 'none'}`);
     return res.json({ 
       jsonrpc: "2.0", id, 
       error: createError(-32504, "Ошибка авторизации", "Avtorizatsiya xatosi", "Error auth")
