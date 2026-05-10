@@ -63,7 +63,17 @@ app.post(["/api/payme", "/api/webhooks/payme"], async (req: Request, res: Respon
   }
 
   // Basic Auth Check
-  const paymeKey = process.env.PAYME_KEY;
+  // Check both PAYME_KEY and VITE_PAYME_KEY for flexibility
+  let paymeKey = (process.env.PAYME_KEY || process.env.VITE_PAYME_KEY || "").trim();
+  
+  // Remove potential surrounding quotes from environment variables
+  if (paymeKey.startsWith('"') && paymeKey.endsWith('"')) {
+    paymeKey = paymeKey.substring(1, paymeKey.length - 1);
+  }
+  if (paymeKey.startsWith("'") && paymeKey.endsWith("'")) {
+    paymeKey = paymeKey.substring(1, paymeKey.length - 1);
+  }
+
   if (!paymeKey) {
     console.error("[Payme] Error: PAYME_KEY is not defined in environment");
     return res.json({ 
@@ -72,11 +82,13 @@ app.post(["/api/payme", "/api/webhooks/payme"], async (req: Request, res: Respon
     });
   }
 
-  // Normalize authorization check
-  const expectedAuth = `Basic ${Buffer.from(`Paycom:${paymeKey.trim()}`).toString('base64')}`;
+  const expectedAuth = `Basic ${Buffer.from(`Paycom:${paymeKey}`).toString('base64')}`;
   
   if (!authHeader || authHeader.trim() !== expectedAuth) {
-    console.warn(`[Payme] Auth Failure. Expected prefix: ${expectedAuth.substring(0, 15)}... Received: ${authHeader ? authHeader.substring(0, 15) + '...' : 'none'}`);
+    const received = authHeader ? `${authHeader.substring(0, 15)}...` : "none";
+    const expected = `${expectedAuth.substring(0, 15)}...`;
+    console.warn(`[Payme] Auth Failure. Method: ${method}, Expected: ${expected}, Received: ${received}`);
+    
     return res.json({ 
       jsonrpc: "2.0", id, 
       error: createError(-32504, "Ошибка авторизации", "Avtorizatsiya xatosi", "Error auth")
