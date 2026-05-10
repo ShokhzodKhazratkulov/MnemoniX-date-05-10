@@ -1,8 +1,6 @@
 
-import express from "express";
-import type { Request, Response } from "express";
+import express, { Request, Response } from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import bodyParser from "body-parser";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
@@ -205,7 +203,8 @@ async function handleGetStatement(params: any, id: any, res: Response) {
 
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
+    const { createServer } = await import("vite");
+    const vite = await createServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
