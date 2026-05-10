@@ -205,7 +205,11 @@ async function handlePerformTransaction(params: any, id: any, res: Response) {
 
   await supabase.from('profiles').update({ subscription_tier: 'PREMIUM', subscription_expires_at: newExpiry.toISOString(), is_pro: true }).eq('id', payment.user_id);
   const now = Date.now();
-  await supabase.from('payments').update({ status: 'paid', updated_at: new Date(now).toISOString() }).eq('id', payment.id);
+  await supabase.from('payments').update({ 
+    status: 'paid', 
+    perform_time: now, 
+    updated_at: new Date(now).toISOString() 
+  }).eq('id', payment.id);
 
   return res.json({ jsonrpc: "2.0", id, result: { perform_time: now, transaction: payment.id.toString(), state: 2 } });
 }
@@ -223,12 +227,22 @@ async function handleCancelTransaction(params: any, id: any, res: Response) {
   if (payment.status === 'paid') {
     await supabase.from('profiles').update({ subscription_tier: 'FREE', subscription_expires_at: null, is_pro: false }).eq('id', payment.user_id);
     const now = Date.now();
-    await supabase.from('payments').update({ status: 'cancelled', cancel_reason: reason, updated_at: new Date(now).toISOString() }).eq('id', payment.id);
+    await supabase.from('payments').update({ 
+      status: 'cancelled', 
+      cancel_reason: reason, 
+      cancel_time: now, 
+      updated_at: new Date(now).toISOString() 
+    }).eq('id', payment.id);
     return res.json({ jsonrpc: "2.0", id, result: { cancel_time: now, transaction: payment.id.toString(), state: -2 } });
   }
 
   const now = Date.now();
-  await supabase.from('payments').update({ status: 'cancelled', cancel_reason: reason, updated_at: new Date(now).toISOString() }).eq('id', payment.id);
+  await supabase.from('payments').update({ 
+    status: 'cancelled', 
+    cancel_reason: reason, 
+    cancel_time: now, 
+    updated_at: new Date(now).toISOString() 
+  }).eq('id', payment.id);
   return res.json({ jsonrpc: "2.0", id, result: { cancel_time: now, transaction: payment.id.toString(), state: -1 } });
 }
 
@@ -244,17 +258,17 @@ async function handleCheckTransaction(params: any, id: any, res: Response) {
 
   if (payment.status === 'paid') {
     s = 2;
-    performTime = new Date(payment.updated_at).getTime();
+    performTime = Number(payment.perform_time || new Date(payment.updated_at).getTime());
   } else if (payment.status === 'cancelled') {
     const cReason = Number(payment.cancel_reason || 0);
     s = (cReason >= 4) ? -2 : -1;
-    cancelTime = new Date(payment.updated_at).getTime();
+    cancelTime = Number(payment.cancel_time || new Date(payment.updated_at).getTime());
     reason = cReason;
     
     // Payme Sandbox fix: if state is -2 (performed then cancelled), 
-    // perform_time MUST NOT be 0. We'll use a placeholder timestamp.
+    // perform_time MUST NOT be 0. We'll use the stored perform_time or fallback.
     if (s === -2) {
-      performTime = cancelTime - 1; 
+      performTime = Number(payment.perform_time || (cancelTime - 1)); 
     }
   }
 
@@ -281,13 +295,13 @@ async function handleGetStatement(params: any, id: any, res: Response) {
     
     if (p.status === 'paid') {
       s = 2;
-      pt = new Date(p.updated_at).getTime();
+      pt = Number(p.perform_time || new Date(p.updated_at).getTime());
     } else if (p.status === 'cancelled') {
       const cReason = Number(p.cancel_reason || 0);
       s = (cReason >= 4) ? -2 : -1;
-      ct = new Date(p.updated_at).getTime();
+      ct = Number(p.cancel_time || new Date(p.updated_at).getTime());
       r = cReason;
-      if (s === -2) pt = ct - 1;
+      if (s === -2) pt = Number(p.perform_time || (ct - 1));
     }
     
     return {
