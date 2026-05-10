@@ -37,13 +37,22 @@ function createError(code: number, ru: string, uz: string, en: string, data?: st
   };
 }
 
+// API routes go here
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", environment: process.env.NODE_ENV, port: PORT });
+});
+
 // Payme Merchant API Handler
 /**
  * PAYME MERCHANT API HANDLER
  */
 app.post(["/api/payme", "/api/webhooks/payme"], async (req: Request, res: Response) => {
-  const { method, params, id } = req.body;
+  const { method, params, id } = req.body || {};
   const authHeader = req.headers.authorization;
+
+  if (!method) {
+    return res.json({ jsonrpc: "2.0", id: id || null, error: createError(-32600, "Invalid Request", "Noto'g'ri so'rov", "Invalid Request") });
+  }
 
   // Basic Auth Check
   const paymeKey = process.env.PAYME_KEY;
@@ -88,9 +97,9 @@ app.post(["/api/payme", "/api/webhooks/payme"], async (req: Request, res: Respon
 // --- Payme Protocol Method Handlers ---
 
 async function handleCheckPerform(params: any, id: any, res: Response) {
-  const { amount, account } = params;
-  const orderId = account.order_id;
-  if (!orderId) return res.json({ jsonrpc: "2.0", id, error: createError(-31050, "ID missing", "ID yo'q", "ID missing", "order_id") });
+  const { amount, account } = params || {};
+  const orderId = account?.order_id;
+  if (!orderId) return res.json({ jsonrpc: "2.0", id, error: createError(-31050, "Order ID missing", "Order ID topilmadi", "Order ID missing", "order_id") });
 
   const { data: payment } = await supabase.from('payments').select('*').eq('order_id', orderId).maybeSingle();
   if (!payment) return res.json({ jsonrpc: "2.0", id, error: createError(-31050, "Order not found", "Buyurtma topilmadi", "Order not found", "order_id") });
@@ -103,8 +112,10 @@ async function handleCheckPerform(params: any, id: any, res: Response) {
 }
 
 async function handleCreateTransaction(params: any, id: any, res: Response) {
-  const { id: paymeId, time, account } = params;
-  const orderId = account.order_id;
+  const { id: paymeId, time, account } = params || {};
+  const orderId = account?.order_id;
+  if (!orderId) return res.json({ jsonrpc: "2.0", id, error: createError(-31050, "Order ID missing", "Order ID topilmadi", "Order ID missing", "order_id") });
+  
   const { data: payment } = await supabase.from('payments').select('*').eq('order_id', orderId).maybeSingle();
   if (!payment) return res.json({ jsonrpc: "2.0", id, error: createError(-31050, "Order not found", "Buyurtma topilmadi", "Order not found", "order_id") });
 
