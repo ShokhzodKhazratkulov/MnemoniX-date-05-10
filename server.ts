@@ -39,8 +39,12 @@ function createError(code: number, ru: string, uz: string, en: string, data?: st
 
 // API routes go here
 app.get("/api/health", (req, res) => {
-  const authHeader = req.headers.authorization;
-  const paymeKey = (process.env.PAYME_KEY || process.env.VITE_PAYME_KEY || "").trim();
+  let paymeKey = (process.env.PAYME_KEY || process.env.VITE_PAYME_KEY || "").trim();
+  paymeKey = paymeKey.replace(/['"\s\r\n]/g, '');
+
+  const authHeader = req.headers.authorization || 
+                    req.headers['x-authorization'] || 
+                    req.headers['http-authorization'];
   
   res.json({ 
     status: "ok", 
@@ -49,7 +53,6 @@ app.get("/api/health", (req, res) => {
     paymeKeySet: !!paymeKey,
     paymeKeyLen: paymeKey.length,
     paymeKeyFirst: paymeKey.substring(0, 3) + "...",
-    paymeKeyLast: "..." + paymeKey.substring(paymeKey.length - 3),
     hasAuthHeader: !!authHeader,
     authHeaderReceived: authHeader ? authHeader.substring(0, 15) + "..." : null
   });
@@ -61,7 +64,6 @@ app.get("/api/health", (req, res) => {
  */
 app.post(["/api/payme", "/api/webhooks/payme"], async (req: Request, res: Response) => {
   const { method, params, id } = req.body || {};
-  const authHeader = req.headers.authorization;
 
   if (!method) {
     return res.json({ jsonrpc: "2.0", id: id || null, error: createError(-32600, "Invalid Request", "Noto'g'ri so'rov", "Invalid Request") });
@@ -71,13 +73,8 @@ app.post(["/api/payme", "/api/webhooks/payme"], async (req: Request, res: Respon
   // Check both PAYME_KEY and VITE_PAYME_KEY for flexibility
   let paymeKey = (process.env.PAYME_KEY || process.env.VITE_PAYME_KEY || "").trim();
   
-  // Remove potential surrounding quotes from environment variables
-  if (paymeKey.startsWith('"') && paymeKey.endsWith('"')) {
-    paymeKey = paymeKey.substring(1, paymeKey.length - 1);
-  }
-  if (paymeKey.startsWith("'") && paymeKey.endsWith("'")) {
-    paymeKey = paymeKey.substring(1, paymeKey.length - 1);
-  }
+  // Aggressive cleanup: remove all spaces, newlines, and quotes that panels often add
+  paymeKey = paymeKey.replace(/['"\s\r\n]/g, '');
 
   if (!paymeKey) {
     console.error("[Payme] Error: PAYME_KEY is not defined in environment");
@@ -86,6 +83,11 @@ app.post(["/api/payme", "/api/webhooks/payme"], async (req: Request, res: Respon
       error: createError(-32504, "Ошибка конфигурации сервера", "Server konfiguratsiyasi xatosi", "Server configuration error")
     });
   }
+
+  // Support fallbacks for headers that proxies like Hostinger/Nginx might rename
+  const authHeader = req.headers.authorization || 
+                    req.headers['x-authorization'] || 
+                    req.headers['http-authorization'] as string;
 
   const expectedToken = Buffer.from(`Paycom:${paymeKey}`).toString('base64');
   const receivedToken = (authHeader || "").split(/\s+/).pop() || "";
