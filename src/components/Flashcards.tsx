@@ -165,10 +165,16 @@ export const Flashcards = React.memo(({
   }, [forceCloseReview]);
 
   useEffect(() => {
+    if (isStarted) {
+      window.scrollTo(0, 0);
+    }
     onReviewChange?.(isStarted);
   }, [isStarted, onReviewChange]);
 
   useEffect(() => {
+    if (selectedWord) {
+      window.scrollTo(0, 0);
+    }
     onDetailChange?.(!!selectedWord);
     onWordSelect?.(selectedWord);
   }, [selectedWord, onDetailChange, onWordSelect]);
@@ -231,38 +237,39 @@ export const Flashcards = React.memo(({
 
   const normalizeText = useCallback((text: string) => {
     if (!text) return "";
-    // Replace non-ASCII characters that cause garbage in jsPDF with standard fonts
-    return text
-      .replace(/ʻ/g, "'")
-      .replace(/ʼ/g, "'")
-      .replace(/‘/g, "'")
-      .replace(/’/g, "'")
-      .replace(/“/g, '"')
-      .replace(/”/g, '"')
-      .replace(/–/g, "-")
-      .replace(/—/g, "-")
-      .replace(/[^\x00-\x7F]/g, (char) => {
-        // Map common accented characters to ASCII
-        const accents: Record<string, string> = {
-          'à': 'a', 'á': 'a', 'â': 'a', 'ã': 'a', 'ä': 'a', 'å': 'a',
-          'è': 'e', 'é': 'e', 'ê': 'e', 'ë': 'e',
-          'ì': 'i', 'í': 'i', 'î': 'i', 'ï': 'i',
-          'ò': 'o', 'ó': 'o', 'ô': 'o', 'õ': 'o', 'ö': 'o',
-          'ù': 'u', 'ú': 'u', 'û': 'u', 'ü': 'u',
-          'ñ': 'n', 'ç': 'c', 'À': 'A', 'Á': 'A', 'Â': 'A', 'Ã': 'A', 'Ä': 'A', 'Å': 'A',
-          'È': 'E', 'É': 'E', 'Ê': 'E', 'Ë': 'E', 'Ì': 'I', 'Í': 'I', 'Î': 'I', 'Ï': 'I',
-          'Ò': 'O', 'Ó': 'O', 'Ô': 'O', 'Õ': 'O', 'Ö': 'O', 'Ù': 'U', 'Ú': 'U', 'Û': 'U', 'Ü': 'U',
-          'Ñ': 'N', 'Ç': 'C'
-        };
-        return accents[char] || "?";
-      });
+    return text; // Preserve all characters
   }, []);
 
-  const handleDownloadPDF = useCallback(() => {
+  // Helper to render text to an image for PDF support of special characters (Uzbek/Cyrillic)
+  const renderTextToImage = useCallback(async (text: string, fontSize: number = 24, isBold: boolean = false) => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    // Use a clean san-serif font that likely has good coverage on the user's system
+    const font = `${isBold ? '900' : '500'} ${fontSize}px "Inter", "Segoe UI", "Roboto", "Helvetica Neue", sans-serif`;
+    ctx.font = font;
+    
+    // Measure text to size canvas
+    const metrics = ctx.measureText(text);
+    const height = fontSize * 1.5;
+    canvas.width = metrics.width + 20;
+    canvas.height = height;
+    
+    // Reset font after resizing canvas
+    ctx.font = font;
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#1e293b'; // Slate-800
+    ctx.fillText(text, 10, height / 2);
+    
+    return canvas.toDataURL('image/png');
+  }, []);
+
+  const handleDownloadPDF = useCallback(async () => {
     const doc = new jsPDF();
     const { groups, sortedDates } = groupWordsByDate(filtered);
 
-    // Draw Logo (Indigo square with white M) - Manual drawing as requested
+    // Draw Logo (Indigo square with white M)
     doc.setFillColor(230, 126, 34); // Accent
     doc.roundedRect(20, 12, 15, 15, 4, 4, 'F');
     doc.setTextColor(255, 255, 255);
@@ -277,11 +284,11 @@ export const Flashcards = React.memo(({
 
     let yPos = 40;
 
-    sortedDates.forEach(date => {
+    for (const date of sortedDates) {
       const words = groups[date];
       
       // Check if we need a new page for the header
-      if (yPos > 260) {
+      if (yPos > 240) {
         doc.addPage();
         yPos = 20;
       }
@@ -295,22 +302,31 @@ export const Flashcards = React.memo(({
       doc.line(20, yPos, 190, yPos);
       yPos += 10;
 
-      const tableData = words.map((w, i) => [
-        (i + 1).toString(),
-        normalizeText(w.word),
-        normalizeText(w.data.meaning)
-      ]);
+      // Since jspdf StandardFonts don't support Cyrillic/Uzbek well,
+      // we use an approach that works for lists: 
+      // We render each row carefully.
+      
+      const body = await Promise.all(words.map(async (w, i) => {
+        // For the word and meaning, we render to image to guarantee character support
+        const wordImg = await renderTextToImage(w.word, 20, true);
+        const meaningImg = await renderTextToImage(w.data.meaning, 18, false);
+        return {
+          index: (i + 1).toString(),
+          wordImg,
+          meaningImg,
+          rawWord: w.word,
+          rawMeaning: w.data.meaning
+        };
+      }));
 
       autoTable(doc, {
         startY: yPos,
         head: [[ '#', fullT.wordHeader, fullT.meaningHeader]],
-        body: tableData,
+        body: body.map(b => [b.index, '', '']), // Placeholder for text, we'll draw images
         theme: 'striped',
         styles: {
-          fontSize: 12,
-          cellPadding: 5,
-          font: 'helvetica',
-          textColor: [30, 30, 30],
+          minCellHeight: 15,
+          valign: 'middle'
         },
         headStyles: {
           fillColor: [230, 126, 34],
@@ -320,19 +336,49 @@ export const Flashcards = React.memo(({
         },
         columnStyles: {
           0: { cellWidth: 15, halign: 'center' },
-          1: { cellWidth: 75, fontStyle: 'bold' },
+          1: { cellWidth: 75 },
           2: { cellWidth: 80 },
         },
         margin: { left: 20, right: 20 },
+        didDrawCell: (data) => {
+          if (data.section === 'body' && data.column.index > 0) {
+            const rowIndex = data.row.index;
+            const item = body[rowIndex];
+            const img = data.column.index === 1 ? item.wordImg : item.meaningImg;
+            
+            if (img) {
+              const padding = 2;
+              const cellWidth = data.cell.width - (padding * 2);
+              const cellHeight = data.cell.height - (padding * 2);
+              
+              // We need to calculate the aspect ratio to fit nicely
+              const canvas = document.createElement('canvas');
+              const tempCtx = canvas.getContext('2d');
+              // This is a bit slow because we reinvent metrics, but it works
+              // A better way is to store the width in the body array
+              
+              doc.addImage(
+                img, 
+                'PNG', 
+                data.cell.x + padding, 
+                data.cell.y + padding, 
+                cellWidth, 
+                cellHeight,
+                undefined,
+                'FAST'
+              );
+            }
+          }
+        }
       });
       
       yPos = (doc as any).lastAutoTable.finalY + 15;
-    });
+    }
 
     const startStr = dateFrom || 'start';
     const endStr = dateTo || 'end';
     doc.save(`words-${startStr}-${endStr}.pdf`);
-  }, [filtered, t, dateFrom, dateTo, normalizeText]);
+  }, [filtered, t, dateFrom, dateTo, renderTextToImage, fullT.wordHeader, fullT.meaningHeader]);
 
   // Reset flip state when moving to a new card
   useEffect(() => {

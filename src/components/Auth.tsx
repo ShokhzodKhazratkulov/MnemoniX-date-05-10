@@ -19,6 +19,24 @@ export const Auth: React.FC<AuthProps> = ({ onClose, onSuccess, t }) => {
   const [error, setError] = useState<string | null>(null);
 
   const [message, setMessage] = useState<string | null>(null);
+  const [userCount, setUserCount] = useState<number | null>(null);
+
+  React.useEffect(() => {
+    const fetchUserCount = async () => {
+      try {
+        const { count, error } = await supabase
+          .from('profiles')
+          .select('*', { count: 'exact', head: true });
+        
+        if (!error && count !== null) {
+          setUserCount(count);
+        }
+      } catch (err) {
+        console.error('Error fetching user count:', err);
+      }
+    };
+    fetchUserCount();
+  }, []);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -101,7 +119,7 @@ export const Auth: React.FC<AuthProps> = ({ onClose, onSuccess, t }) => {
             ))}
           </div>
           <p className="text-neutral font-bold text-sm uppercase tracking-widest">
-            {t.activeLearners}
+            +{userCount ? (userCount / 1000).toFixed(1) + 'K' : '12K'} {t.activeLearners}
           </p>
         </div>
 

@@ -471,10 +471,33 @@ export default function App() {
         setRemixSource(null);
         setEditingPost(null);
       }
+      
+      // Update history state for native back button support
+      window.history.pushState({ view: newView }, "");
+      
       setViewHistory(prev => [...prev, view]);
       setView(newView);
     }
   }, [view]);
+
+  // Listen for browser/native back button
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      if (event.state && event.state.view) {
+        setView(event.state.view);
+      } else {
+        // Fallback or exit logic
+        goBack();
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    
+    // Initial state
+    window.history.replaceState({ view: view }, "");
+
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []); // Only once on mount, internally uses the current values through navigation functions if needed or just sets raw state
 
   const goBack = () => {
     // 1. If reviewing flashcards, go back to flashcards list
@@ -581,6 +604,11 @@ export default function App() {
   const handleSearch = async (e?: React.FormEvent, word?: string) => {
     if (e) e.preventDefault();
     
+    // Dismiss keyboard on mobile
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    
     // Monetization Check
     if (!isPremium && searchRemaining <= 0) {
       setError(t.errorLimitReached || "Kunlik limitga yetdingiz. Premiumga o'ting!");
@@ -612,6 +640,7 @@ export default function App() {
       setImageUrl(indexedMnemonic.imageUrl);
       setMnemonicId(indexedMnemonic.id);
       setState(AppState.RESULTS);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
@@ -620,6 +649,7 @@ export default function App() {
       setMnemonic(searchCache.current[cacheKey].mnemonic);
       setImageUrl(searchCache.current[cacheKey].imageUrl);
       setState(AppState.RESULTS);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 

@@ -181,7 +181,7 @@ export const VoiceMode = React.memo(({ onClose, uiLanguage, contentLanguage }: P
         const inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
 
         sessionPromise = ai.live.connect({
-          model: 'gemini-3.1-flash-live-preview',
+          model: 'models/gemini-2.0-flash-exp',
           callbacks: {
             onopen: () => {
               if (!mountedRef.current) return;
