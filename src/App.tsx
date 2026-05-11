@@ -95,6 +95,22 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const { posts, fetchPosts } = usePosts();
   const [showFeedback, setShowFeedback] = useState(false);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [view]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      // If the viewport height decreases by more than 25%, assume keyboard is open
+      const threshold = window.screen.height * 0.75;
+      setIsKeyboardOpen(window.innerHeight < threshold);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const handleTourComplete = async () => {
     setShowTour(false);
@@ -1743,7 +1759,7 @@ export default function App() {
                 setView(AppView.PRACTICE);
               }
             }}
-            className="fixed right-6 bottom-24 md:bottom-8 z-[60] flex items-center gap-2 px-4 py-2.5 bg-accent text-white rounded-full font-black shadow-xl shadow-accent/20 dark:shadow-none hover:bg-accent-hover hover:scale-110 transition-all active:scale-95 group"
+            className={`fixed right-6 ${isKeyboardOpen ? 'bottom-8' : 'bottom-24 md:bottom-8'} z-[60] flex items-center gap-2 px-4 py-2.5 bg-accent text-white rounded-full font-black shadow-xl shadow-accent/20 dark:shadow-none hover:bg-accent-hover hover:scale-110 transition-all active:scale-95 group`}
           >
             <div className="relative">
               <Sparkles size={18} />
@@ -1764,8 +1780,8 @@ export default function App() {
       </AnimatePresence>
 
       {/* Bottom Navigation for Mobile */}
-      {view !== AppView.AUTH && (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/80 dark:bg-slate-950/80 backdrop-blur-2xl border-t border-gray-100 dark:border-slate-800/50 pb-safe">
+      {view !== AppView.AUTH && !isKeyboardOpen && (
+        <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/80 dark:bg-slate-950/80 backdrop-blur-2xl border-t border-gray-100 dark:border-slate-800/50 pb-safe pb-[env(safe-area-inset-bottom)]">
           <div className="max-w-md mx-auto flex items-center justify-around px-1 py-1">
             {[
               { id: AppView.HOME, icon: <Home size={22} />, label: t.navHome, tour: "home" },

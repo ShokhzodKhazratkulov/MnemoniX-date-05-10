@@ -166,7 +166,7 @@ export const VoiceMode = React.memo(({ onClose, uiLanguage, contentLanguage }: P
 
   useEffect(() => {
     mountedRef.current = true;
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     let sessionPromise: Promise<any>;
 
     const startSession = async () => {
@@ -181,7 +181,7 @@ export const VoiceMode = React.memo(({ onClose, uiLanguage, contentLanguage }: P
         const inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
 
         sessionPromise = ai.live.connect({
-          model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+          model: 'gemini-3.1-flash-live-preview',
           callbacks: {
             onopen: () => {
               if (!mountedRef.current) return;

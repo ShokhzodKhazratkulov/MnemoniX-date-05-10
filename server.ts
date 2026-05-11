@@ -45,9 +45,9 @@ app.get("/api/health", (req, res) => {
   paymeKey = paymeKey.replace(/\\&/g, '&');
   paymeKey = paymeKey.replace(/\\\?/g, '?');
 
-  const authHeader = req.headers.authorization || 
+  const authHeader = (req.headers.authorization || 
                     req.headers['x-authorization'] || 
-                    req.headers['http-authorization'] as string;
+                    req.headers['http-authorization'] || '') as string;
   
   res.json({ 
     status: "ok", 
@@ -56,7 +56,7 @@ app.get("/api/health", (req, res) => {
     paymeKeySet: !!paymeKey,
     paymeKeyLen: paymeKey.length,
     hasAuthHeader: !!authHeader,
-    authHeaderReceived: authHeader ? `${authHeader.substring(0, 15)}...` : null
+    authHeaderReceived: typeof authHeader === 'string' ? `${authHeader.substring(0, 15)}...` : null
   });
 });
 
@@ -92,9 +92,11 @@ app.post(["/api/payme", "/api/webhooks/payme"], async (req: Request, res: Respon
   }
 
   // Support fallbacks for headers that proxies like Hostinger/Nginx might rename
-  const authHeader = req.headers.authorization || 
-                    req.headers['x-authorization'] || 
-                    req.headers['http-authorization'] as string;
+  const authHeaderRaw = req.headers.authorization || 
+                        req.headers['x-authorization'] || 
+                        req.headers['http-authorization'] || "";
+  
+  const authHeader = Array.isArray(authHeaderRaw) ? authHeaderRaw[0] : (authHeaderRaw as string);
 
   const expectedToken = Buffer.from(`Paycom:${paymeKey}`).toString('base64');
   const receivedToken = (authHeader || "").split(/\s+/).pop() || "";

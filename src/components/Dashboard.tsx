@@ -115,8 +115,8 @@ export const Dashboard = React.memo(({ savedMnemonics, language, onDelete, onNav
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={() => setShowCelebration(false)}
-            className="fixed inset-0 z-[100] flex items-start justify-center pt-10 sm:pt-20 bg-black/20 backdrop-blur-[2px] cursor-pointer px-4"
+            onClick={() => {}}
+            className="fixed inset-0 z-[100] flex items-start justify-center pt-10 sm:pt-20 bg-black/20 backdrop-blur-[2px] px-4"
           >
             {/* Confetti Particles */}
             {[...Array(50)].map((_, i) => (
@@ -172,8 +172,8 @@ export const Dashboard = React.memo(({ savedMnemonics, language, onDelete, onNav
               initial={{ opacity: 0, scale: 0.5, y: -100, rotate: -10 }}
               animate={{ opacity: 1, scale: 1, y: 0, rotate: 0 }}
               exit={{ opacity: 0, scale: 0.5, y: -200, rotate: 10 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-white dark:bg-slate-900 border-8 border-emerald-500/20 p-8 sm:p-12 rounded-[3rem] sm:rounded-[4rem] shadow-[0_40px_150px_rgba(16,185,129,0.6)] text-center space-y-6 max-w-lg relative overflow-hidden"
+              onClick={() => setShowCelebration(false)}
+              className="bg-white dark:bg-slate-900 border-8 border-emerald-500/20 p-8 sm:p-12 rounded-[3rem] sm:rounded-[4rem] shadow-[0_40px_150px_rgba(16,185,129,0.6)] text-center space-y-6 max-w-lg relative overflow-hidden cursor-pointer"
             >
               {/* Animated Background Glow */}
               <motion.div 

@@ -290,20 +290,20 @@ export const Profile = React.memo(({ user, savedMnemonics, totalWords, masteredC
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="bg-white dark:bg-slate-900 rounded-[2rem] p-6 shadow-lg border border-gray-100 dark:border-slate-800 flex items-center justify-between"
+          className="bg-white dark:bg-slate-900 rounded-[2rem] p-6 shadow-lg border border-gray-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4"
         >
-          <div className="flex items-center gap-4">
-            <div className={`p-3 rounded-2xl ${isPremium ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>
+          <div className="flex items-center gap-4 w-full sm:w-auto">
+            <div className={`p-3 rounded-2xl shrink-0 ${isPremium ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>
               {isPremium ? <Sparkles size={24} /> : <Zap size={24} />}
             </div>
-            <div>
-              <p className="text-xs font-black text-gray-400 uppercase tracking-widest leading-none mb-1">{t.premium?.planType || 'PLAN TYPE'}</p>
-              <h4 className="text-xl font-black">{isPremium ? (t.premium?.active || 'Premium Active') : (t.premium?.freemium || 'Freemium')}</h4>
+            <div className="min-w-0">
+              <p className="text-xs font-black text-gray-400 uppercase tracking-widest leading-none mb-1 truncate">{t.premium?.planType || 'PLAN TYPE'}</p>
+              <h4 className="text-xl font-black truncate">{isPremium ? (t.premium?.active || 'Premium Active') : (t.premium?.freemium || 'Freemium')}</h4>
             </div>
           </div>
           <button 
             onClick={() => onNavigate(AppView.SUBSCRIPTION)}
-            className="px-6 py-2.5 bg-accent text-white rounded-xl font-black text-xs hover:bg-accent-hover transition-all active:scale-95 shadow-lg shadow-accent/20"
+            className="w-full sm:w-auto px-6 py-2.5 bg-accent text-white rounded-xl font-black text-xs hover:bg-accent-hover transition-all active:scale-95 shadow-lg shadow-accent/20 whitespace-nowrap"
           >
             {isPremium ? (t.premium?.manageSubscription || 'MANAGE SUBSCRIPTION') : (t.premium?.upgradeNow || 'UPGRADE NOW')}
           </button>

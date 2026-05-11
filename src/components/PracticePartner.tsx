@@ -150,7 +150,7 @@ export const PracticePartner: React.FC<Props> = ({ word, meaning, language, onCl
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[100] bg-gray-50 dark:bg-slate-950 flex flex-col"
+      className="fixed inset-0 z-[100] bg-gray-50 dark:bg-slate-950 flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
     >
       <AnimatePresence>
         {showLevelSelector && (
@@ -241,7 +241,7 @@ export const PracticePartner: React.FC<Props> = ({ word, meaning, language, onCl
         )}
       </AnimatePresence>
       {/* Header */}
-      <div className="bg-white dark:bg-slate-900 border-b border-gray-100 dark:border-slate-800 p-4 sticky top-0 z-10">
+      <div className="bg-white dark:bg-slate-900 border-b border-gray-100 dark:border-slate-800 p-4 sticky top-0 z-10 sm:pt-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button 
@@ -315,7 +315,7 @@ export const PracticePartner: React.FC<Props> = ({ word, meaning, language, onCl
       </div>
 
       {/* Input Area */}
-      <div className="bg-white dark:bg-slate-900 border-t border-gray-100 dark:border-slate-800 p-4 sm:p-8 sticky bottom-0">
+      <div className="bg-white dark:bg-slate-900 border-t border-gray-100 dark:border-slate-800 p-4 sm:p-8 sticky bottom-0 sm:pb-8">
         <form onSubmit={handleSend} className="max-w-4xl mx-auto">
           <div className="relative flex items-center gap-4">
             <div className="relative flex-1 flex items-center gap-2">

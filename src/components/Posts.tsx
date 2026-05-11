@@ -382,9 +382,9 @@ export const Posts = React.memo(({ user, language, theme, viewMode = 'all', isPr
         </h2>
         <button 
           onClick={() => onNavigate?.(AppView.CREATE_POST)}
-          className="flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-full font-bold text-sm shadow-lg shadow-accent/20 hover:bg-accent-hover transition-all active:scale-95"
+          className="flex items-center gap-2 px-4 py-2.5 bg-accent text-white rounded-full font-black text-xs sm:text-sm shadow-lg shadow-accent/20 hover:bg-accent-hover transition-all active:scale-95 whitespace-nowrap shrink-0"
         >
-          <Plus size={18} />
+          <Plus size={18} className="shrink-0" />
           {t.create}
         </button>
       </div>
