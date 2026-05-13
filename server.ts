@@ -208,7 +208,7 @@ async function handlePerformTransaction(params: any, id: any, res: Response) {
   await supabase.from('profiles').update({ 
     subscription_tier: 'PREMIUM', 
     subscription_expires_at: newExpiry.toISOString(), 
-    subscription_id: paymeId,
+    subscription_id: payment.id,
     is_pro: true 
   }).eq('id', payment.user_id);
   const now = Date.now();
