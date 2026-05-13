@@ -1,6 +1,7 @@
 
 import express, { Request, Response } from "express";
 import path from "path";
+import fs from "fs";
 import bodyParser from "body-parser";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
@@ -423,7 +424,12 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    // Robust path resolution for production
+    const possibleDistPath = path.join(process.cwd(), "dist");
+    const distPath = fs.existsSync(path.join(possibleDistPath, "index.html")) 
+      ? possibleDistPath 
+      : process.cwd();
+    
     console.log(`[Server] Serving static files from: ${distPath}`);
     app.use(express.static(distPath));
     
