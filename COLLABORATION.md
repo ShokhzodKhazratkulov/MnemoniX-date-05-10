@@ -25,7 +25,7 @@ To run this project locally, you need to set up your environment variables.
     Create a `.env` file in the root based on `.env.example`. You will need:
     - `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (Get from Supabase Dashboard).
     - `SUPABASE_SERVICE_ROLE_KEY` (Required for server-side premium activation).
-    - `GEMINI_API_KEYS` (A comma-separated list of Google AI Studio API keys).
+    - `VITE_GEMINI_API_KEYS` (A comma-separated list of Google AI Studio API keys).
     - `PAYME_KEY` (Your Payme Test/Production secret key).
 
 ## 3. Collaboration Flow (GitHub)

@@ -1,36 +1,114 @@
 
-import { Type, Modality, ThinkingLevel } from "@google/genai";
+import { GoogleGenAI, Type, Modality, ThinkingLevel } from "@google/genai";
 import { MnemonicResponse, Language } from "../types";
 
 export class GeminiService {
+  private aiInstance: GoogleGenAI | null = null;
+  private apiKeys: string[] = [];
+  private currentKeyIndex: number = 0;
+
+  private initKeys() {
+    if (this.apiKeys.length > 0) return;
+    
+    const rawKeys = import.meta.env.VITE_GEMINI_API_KEYS;
+    if (!rawKeys) {
+      throw new Error("Gemini API Keys not found. Please ensure VITE_GEMINI_API_KEYS is set.");
+    }
+    
+    this.apiKeys = rawKeys.split(',')
+      .map((k: string) => k.trim())
+      .filter((k: string) => k.length > 0);
+      
+    if (this.apiKeys.length === 0) {
+      throw new Error("No valid Gemini API keys found in VITE_GEMINI_API_KEYS.");
+    }
+  }
+
+  private getAI() {
+    this.initKeys();
+    if (this.aiInstance) return this.aiInstance;
+    
+    const apiKey = this.apiKeys[this.currentKeyIndex];
+    this.aiInstance = new GoogleGenAI({ apiKey });
+    return this.aiInstance;
+  }
+
+  private rotateKey(): boolean {
+    this.initKeys();
+    if (this.apiKeys.length > 1) {
+      this.currentKeyIndex = (this.currentKeyIndex + 1) % this.apiKeys.length;
+      this.aiInstance = null;
+      console.warn(`Rotating to API key index ${this.currentKeyIndex + 1}/${this.apiKeys.length}`);
+      return true;
+    }
+    return false;
+  }
+
   /**
    * Robust exponential backoff retry logic for handling transient API errors and rate limits.
+   * Also handles API key rotation if multiple keys are provided.
    */
   private async withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
     let lastError: any;
+    let rotationCount = 0;
+    
+    // Total attempts = initial + maxRetries + potentially rotating through all keys
     const maxAttempts = maxRetries + 1;
 
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    for (let attempt = 0; attempt < maxAttempts + rotationCount; attempt++) {
       try {
         return await fn();
       } catch (error: any) {
         lastError = error;
         
-        const status = error?.status;
-        const message = error?.message || '';
+        // Extract status code from various possible error structures
+        const status = error?.status || error?.error?.code || error?.status_code;
+        const message = error?.message || (typeof error === 'string' ? error : '');
+        const errorBodyString = error?.response?.body ? JSON.stringify(error.response.body) : '';
         
-        const isQuotaError = status === 429 || message.includes('429');
-        const isServerError = (status >= 500 && status < 600);
+        const isQuotaError = 
+          status === 429 || 
+          message.includes('429') || 
+          message.includes('RESOURCE_EXHAUSTED') ||
+          message.toLowerCase().includes('quota exceeded') ||
+          errorBodyString.includes('429') ||
+          errorBodyString.includes('RESOURCE_EXHAUSTED');
+
+        if (isQuotaError) {
+          if (this.rotateKey()) {
+            rotationCount++;
+            // If we have more keys to try, retry immediately with the new key
+            if (rotationCount < this.apiKeys.length) {
+              console.warn(`Quota exceeded for key ${this.currentKeyIndex}. Retrying with next key...`);
+              continue;
+            }
+          }
+        }
+
+        const isServerError = 
+          (status >= 500 && status < 600) || 
+          message.includes('500') || 
+          message.includes('503');
+
+        // Handle "Requested entity was not found" which can happen during key selection race conditions
+        const isNotFoundError = message.includes('Requested entity was not found');
+
+        // Handle transient network errors like "Failed to fetch"
         const isNetworkError = 
           message.includes('Failed to fetch') || 
           message.includes('NetworkError') || 
           message.includes('fetch failed') ||
+          message.includes('ERR_CONNECTION_CLOSED') ||
+          message.includes('ERR_INTERNET_DISCONNECTED') ||
+          message.includes('ERR_NETWORK_CHANGED') ||
+          message.includes('ERR_CONNECTION_RESET') ||
           error instanceof TypeError;
 
-        if (isQuotaError || isServerError || isNetworkError) {
-          if (attempt < maxAttempts - 1) {
+        if (isQuotaError || isServerError || isNotFoundError || isNetworkError) {
+          if (attempt < maxAttempts + rotationCount - 1) {
+            // Reduced delay: 2s, 5s... to better handle strict quotas without long waits
             const delay = (Math.pow(2, attempt + 1) - 1) * 1000 + Math.random() * 1000;
-            console.warn(`Retrying after error ${status || 'unknown'} (Attempt ${attempt + 1}/${maxAttempts}) in ${Math.round(delay)}ms. Message: ${message}`);
+            console.warn(`Retrying after error ${status || 'unknown'} (Attempt ${attempt + 1}/${maxAttempts + rotationCount}) in ${Math.round(delay)}ms. Message: ${message}`);
             await new Promise(resolve => setTimeout(resolve, delay));
             continue;
           }
@@ -41,38 +119,16 @@ export class GeminiService {
     throw lastError;
   }
 
-  private async callServer(payload: any) {
-    const response = await fetch('/api/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      const error = new Error(errorData.error || 'Server error');
-      (error as any).status = response.status;
-      throw error;
-    }
-
-    const data = await response.json();
-    
-    // Supplement with a shim for .text property if it's missing (for compatibility with existing logic)
-    if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-      data.text = data.candidates[0].content.parts[0].text;
-    }
-
-    return data;
-  }
-
   /**
    * Corrects the spelling of a word using AI. 
+   * Returns the original word if no correction is needed.
    */
   async checkSpelling(word: string): Promise<string> {
     return this.withRetry(async () => {
-      const response = await this.callServer({
-        type: 'spelling',
-        prompt: `Correct the spelling of the following English word: "${word}". 
+      const ai = this.getAI();
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Correct the spelling of the following English word: "${word}". 
         Return ONLY the corrected word. If the word is already correct, return it as is. 
         Do not include any punctuation or explanations.`,
         config: {
@@ -86,13 +142,15 @@ export class GeminiService {
   }
 
   /**
-   * Generates a complete mnemonic object
+   * Generates a complete mnemonic object (meaning, acoustic link, imagery link)
+   * in the user's native language using the Keyword Method.
    */
   async getMnemonic(word: string, targetLanguage: Language): Promise<MnemonicResponse> {
     return this.withRetry(async () => {
-      const response = await this.callServer({
-        type: 'mnemonic',
-        prompt: `Generate a mnemonic for the English word "${word}" for a ${targetLanguage} speaker.`,
+      const ai = this.getAI();
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Generate a mnemonic for the English word "${word}" for a ${targetLanguage} speaker.`,
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -108,12 +166,12 @@ export class GeminiService {
               examples: { 
                   type: Type.ARRAY,
                   items: { type: Type.STRING },
-                  description: `2-3 English sentences with their ${targetLanguage} translations`
+                  description: "2-3 English sentences with their ${targetLanguage} translations"
               },
               synonyms: {
                   type: Type.ARRAY,
                   items: { type: Type.STRING },
-                  description: `3-5 English synonyms followed by their ${targetLanguage} translations in parentheses`
+                  description: "3-5 English synonyms followed by their ${targetLanguage} translations in parentheses"
               },
               level: { 
                   type: Type.STRING, 
@@ -155,7 +213,7 @@ CRITICAL RULES:
 1. All explanatory fields (meaning, morphology, imagination, phoneticLink, connectorSentence) MUST be written EXCLUSIVELY in ${targetLanguage}.
 2. The "word" field should remain the original English word.
 3. Return ONLY a valid JSON object.`
-        }
+        },
       });
 
       const text = response.text;
@@ -165,13 +223,15 @@ CRITICAL RULES:
   }
 
   /**
-   * Generates a high-fidelity image
+   * Generates a high-fidelity image based on the mnemonic's visual prompt.
+   * Returns a base64 encoded image string.
    */
   async generateImage(prompt: string): Promise<string> {
     return this.withRetry(async () => {
-      const response = await this.callServer({
-        type: 'image',
-        prompt: {
+      const ai = this.getAI();
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: {
           parts: [{ text: `${prompt}. High-fidelity, high-contrast, cinematic lighting, no text, no labels, 4k resolution.` }],
         },
         config: {
@@ -179,7 +239,7 @@ CRITICAL RULES:
             aspectRatio: "1:1",
             imageSize: "1K"
           }
-        }
+        },
       });
 
       const candidates = response.candidates;
@@ -196,15 +256,19 @@ CRITICAL RULES:
   }
 
   /**
-   * Converts mnemonic text to speech
+   * Converts mnemonic text to speech using a bilingual voice model.
+   * Handles English words and native language explanations in one stream.
    */
   async generateTTS(text: string, targetLanguage: Language): Promise<string> {
     return this.withRetry(async () => {
+      const ai = this.getAI();
+      
+      // Explicitly map language enum to full names for the AI
       const languageName = targetLanguage === Language.ENGLISH ? 'English' : targetLanguage;
 
-      const response = await this.callServer({
-        type: 'tts',
-        prompt: [{ 
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: [{ 
           parts: [{ 
             text: `Read the following text aloud. It contains English words and their explanation in ${languageName}. 
             Please use a clear, standard English accent for the English words and a natural, fluent ${languageName} accent for the rest of the text.
@@ -218,7 +282,7 @@ CRITICAL RULES:
               prebuiltVoiceConfig: { voiceName: 'Kore' },
             },
           },
-        }
+        },
       });
 
       const candidates = response.candidates;
@@ -238,6 +302,8 @@ CRITICAL RULES:
 
   async getPracticeResponse(word: string, meaning: string, targetLanguage: Language, history: any[], level?: 'Easy' | 'Medium' | 'Hard' | 'EasyToHard', sentenceCount: number = 0) {
     return this.withRetry(async () => {
+      const ai = this.getAI();
+      
       const levelInstructions = {
         Easy: "Focus on SIMPLE sentences (Subject + Verb + Object). Use high-frequency, basic vocabulary. Example structure: 'The cat sits on the mat.'",
         Medium: "Focus on COMPOUND sentences using 'and,' 'but,' or 'or.' Encourage the use of common adverbs. Example structure: 'The cat sits on the mat, but the dog is outside.'",
@@ -254,13 +320,14 @@ CRITICAL RULES:
         ? (sentenceCount < 2 ? 'Easy' : sentenceCount < 4 ? 'Medium' : 'Hard')
         : (level || 'Easy');
 
+      // If history is empty, we need an initial prompt to trigger the first greeting
       const contents = history.length > 0 ? history : [{
         role: 'user',
         parts: [{ text: `Hi! I want to practice the word "${word}". I've chosen the ${level === 'EasyToHard' ? 'Easy to Hard' : (level || 'Easy')} level. Please start the session in ${targetLanguage}.` }]
       }];
 
-      const response = await this.callServer({
-        type: 'practice',
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
         contents,
         config: {
           responseMimeType: "application/json",
@@ -290,7 +357,7 @@ CRITICAL RULES:
           7. This is a 5-step practice session. After 5 successful English sentences, set sessionComplete to true, congratulate them warmly in the feedback field, and tell them they have mastered the word!
           8. Keep your feedback concise (max 2-3 sentences).
           9. Return ONLY a valid JSON object.`,
-        }
+        },
       });
       return response.text;
     });
@@ -298,16 +365,17 @@ CRITICAL RULES:
 
   async generateNuance(word: string, synonyms: string[], targetLanguage: Language): Promise<any> {
     return this.withRetry(async () => {
+      const ai = this.getAI();
       const synonymsList = synonyms && synonyms.length > 0 ? synonyms.join(', ') : 'common synonyms';
-      const response = await this.callServer({
-        type: 'nuance',
-        prompt: `Explain the nuance and usage differences between the English word "${word}" and its synonyms: ${synonymsList}. Provide the explanation for a ${targetLanguage} speaker.`,
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Explain the nuance and usage differences between the English word "${word}" and its synonyms: ${synonymsList}. Provide the explanation for a ${targetLanguage} speaker.`,
         config: {
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
             properties: {
-              coreDifference: { type: Type.STRING, description: `The main conceptual difference between the word and its synonyms in ${targetLanguage}.` },
+              coreDifference: { type: Type.STRING, description: "The main conceptual difference between the word and its synonyms in ${targetLanguage}." },
               comparisonTable: {
                 type: Type.ARRAY,
                 items: {
@@ -315,7 +383,7 @@ CRITICAL RULES:
                   properties: {
                     word: { type: Type.STRING },
                     usage: { type: Type.STRING, description: "A natural English sentence using this word." },
-                    reason: { type: Type.STRING, description: `Why this word is used in this specific context (in ${targetLanguage}).` }
+                    reason: { type: Type.STRING, description: "Why this word is used in this specific context (in ${targetLanguage})." }
                   },
                   required: ["word", "usage", "reason"]
                 }
@@ -323,7 +391,7 @@ CRITICAL RULES:
               commonMistake: {
                 type: Type.OBJECT,
                 properties: {
-                  incorrect: { type: Type.STRING, description: `A common incorrect way a ${targetLanguage} speaker might use the word.` },
+                  incorrect: { type: Type.STRING, description: "A common incorrect way a ${targetLanguage} speaker might use the word." },
                   natural: { type: Type.STRING, description: "The correct, natural way to say it in English." }
                 },
                 required: ["incorrect", "natural"]

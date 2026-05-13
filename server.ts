@@ -4,31 +4,11 @@ import path from "path";
 import bodyParser from "body-parser";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
-import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// Gemini API Setup
-const rawKeys = process.env.GEMINI_API_KEYS || "";
-const apiKeys = rawKeys.split(',').map(k => k.trim()).filter(k => k.length > 0);
-let currentKeyIndex = 0;
-
-function getAI() {
-  if (apiKeys.length === 0) throw new Error("GEMINI_API_KEYS not configured on server.");
-  const apiKey = apiKeys[currentKeyIndex];
-  return new GoogleGenAI({ apiKey });
-}
-
-function rotateKey() {
-  if (apiKeys.length > 1) {
-    currentKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
-    return true;
-  }
-  return false;
-}
 
 // Initialize Supabase Admin client
 const supabase = createClient(
@@ -84,62 +64,6 @@ app.get("/api/health", (req, res) => {
 /**
  * PAYME MERCHANT API HANDLER
  */
-app.post("/api/generate", async (req: Request, res: Response) => {
-  const { prompt, type, config: clientConfig, contents: clientContents } = req.body;
-  
-  if (!type) {
-    return res.status(400).json({ error: "Type is required" });
-  }
-
-  const handleGeneration = async () => {
-    const ai = getAI();
-    let modelName = "gemini-3-flash-preview"; 
-    let contents = clientContents || prompt;
-    let config = clientConfig || {};
-
-    if (type === 'image') modelName = 'gemini-2.5-flash-image';
-    if (type === 'tts') modelName = 'gemini-2.5-flash-preview-tts';
-
-    const response = await ai.models.generateContent({
-      model: modelName,
-      contents: contents,
-      config: config
-    });
-
-    return response;
-  };
-
-  try {
-    let response;
-    let success = false;
-    let attempts = 0;
-    const maxAttempts = apiKeys.length || 1;
-
-    while (!success && attempts < maxAttempts) {
-      try {
-        response = await handleGeneration();
-        success = true;
-      } catch (error: any) {
-        attempts++;
-        const status = error?.status || error?.error?.code || 500;
-        if (status === 429 && rotateKey()) {
-          console.warn(`Quota exceeded, rotated key to index ${currentKeyIndex}`);
-          continue;
-        }
-        throw error;
-      }
-    }
-
-    res.json(response);
-  } catch (error: any) {
-    console.error("Gemini API Error:", error);
-    res.status(error?.status || 500).json({ 
-      error: error?.message || "Internal server error during generation",
-      status: error?.status
-    });
-  }
-});
-
 app.post(["/api/payme", "/api/webhooks/payme"], async (req: Request, res: Response) => {
   const { method, params, id } = req.body || {};
 
