@@ -171,6 +171,27 @@ ALTER TABLE posts ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Public read posts" ON posts;
 CREATE POLICY "Public read posts" ON posts FOR SELECT USING (true);
 
--- Creation only via Admin or Edge Functions (simulated by false for now if not needed)
-DROP POLICY IF EXISTS "Authenticated can create posts" ON posts;
-CREATE POLICY "Authenticated can create posts" ON posts FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+-- 7. CONNECT PAYMENTS TO PROFILES (Foreign Key & Indexes)
+-- Fix type mismatch: payments.id is uuid, so profiles.subscription_id must be uuid
+DO $$ 
+BEGIN 
+  -- Attempt to convert column type safely
+  ALTER TABLE profiles 
+  ALTER COLUMN subscription_id TYPE uuid USING (NULLIF(subscription_id, '')::uuid);
+
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'profiles_subscription_id_fkey') THEN 
+    ALTER TABLE profiles 
+    ADD CONSTRAINT profiles_subscription_id_fkey 
+    FOREIGN KEY (subscription_id) 
+    REFERENCES payments(id) 
+    ON DELETE SET NULL; 
+  END IF; 
+EXCEPTION WHEN OTHERS THEN
+  -- Fallback if casting fails due to non-uuid data
+  RAISE NOTICE 'Could not convert subscription_id to uuid. Ensure all values are valid UUIDs or NULL.';
+END $$;
+
+-- Speed up joins and lookups
+CREATE INDEX IF NOT EXISTS idx_profiles_subscription_id ON profiles(subscription_id);
+CREATE INDEX IF NOT EXISTS idx_payments_user_id ON payments(user_id);
+CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);

@@ -101,7 +101,7 @@ export default function App() {
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
 
   // TanStack Query for User Data
-  const { profile: userProfile, words: savedMnemonics, refetchProfile, refetchWords } = useUserQueries(user?.id);
+  const { profile: userProfile, words: savedMnemonics, wordCount, masteredCount, refetchProfile, refetchWords } = useUserQueries(user?.id);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -991,7 +991,6 @@ export default function App() {
     );
   }
 
-  const masteredCount = Array.isArray(savedMnemonics) ? savedMnemonics.filter(m => m.isMastered).length : 0;
 
   if (isAuthReady && user && isDeviceAuthorized === false) {
     return (
@@ -1382,7 +1381,7 @@ export default function App() {
               <Profile 
                 user={user} 
                 savedMnemonics={savedMnemonics}
-                totalWords={savedMnemonics.length} 
+                totalWords={wordCount} 
                 masteredCount={masteredCount}
                 userPostCount={posts.filter(p => p.user_id === user?.id && !p.parent_post_id).length}
                 userRemixCount={posts.filter(p => p.user_id === user?.id && !!p.parent_post_id).length}
