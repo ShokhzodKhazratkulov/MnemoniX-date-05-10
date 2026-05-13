@@ -11,7 +11,7 @@ import {
   Tooltip, 
   ResponsiveContainer
 } from 'recharts';
-import { TrendingUp, Award, Upload, Lock, Filter, ChevronDown, Sparkles } from 'lucide-react';
+import { TrendingUp, Award, Upload } from 'lucide-react';
 import { AppView, SubscriptionTier } from '../types';
 
 interface Props {
@@ -27,10 +27,6 @@ interface Props {
 
 export const Dashboard = React.memo(({ savedMnemonics, language, onDelete, onNavigate, t, fullT, profile, currentTier = SubscriptionTier.FREE }: Props) => {
   const [showCelebration, setShowCelebration] = useState(false);
-  const [selectedLevel, setSelectedLevel] = useState<string>('all');
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
-
-  const isPremium = currentTier === SubscriptionTier.PREMIUM || currentTier === SubscriptionTier.TRIAL;
 
   const stats = useMemo(() => {
     const now = new Date();
@@ -51,16 +47,7 @@ export const Dashboard = React.memo(({ savedMnemonics, language, onDelete, onNav
       dailyCounts[today - (i * 24 * 60 * 60 * 1000)] = 0;
     }
 
-    const filteredWords = savedMnemonics.filter(m => {
-      if (selectedLevel !== 'all') {
-        const rawLevel = (m.data.level || 'BEGINNER').toUpperCase();
-        if (!rawLevel.includes(selectedLevel.toUpperCase())) return false;
-      }
-      if (selectedCategory !== 'all' && m.data.category !== selectedCategory) return false;
-      return true;
-    });
-
-    filteredWords.forEach(m => {
+    savedMnemonics.forEach(m => {
       if (m.timestamp >= today) todayCount++;
       if (m.timestamp >= sevenDaysAgo) last7DaysCount++;
       if (m.isHard) hardWords.push(m);
@@ -81,7 +68,7 @@ export const Dashboard = React.memo(({ savedMnemonics, language, onDelete, onNav
       }
     });
 
-    const totalCount = filteredWords.length;
+    const totalCount = savedMnemonics.length;
     const averageDaily = Math.round(last7DaysCount / 7);
     const level = totalCount > 0 
       ? Object.entries(levelCounts).reduce((a, b) => a[1] >= b[1] ? a : b)[0]
@@ -106,7 +93,7 @@ export const Dashboard = React.memo(({ savedMnemonics, language, onDelete, onNav
     const ieltsProgress = Math.min(100, (savedMnemonics.length / targetWords) * 100);
 
     return { todayCount, totalCount, averageDaily, level, chartData, hardWords, targetWords, ieltsProgress, chartDomain };
-  }, [savedMnemonics, profile, t, selectedLevel, selectedCategory]);
+  }, [savedMnemonics, profile, t]);
 
   useEffect(() => {
     const dailyGoal = profile?.daily_goal || 10;
@@ -256,40 +243,6 @@ export const Dashboard = React.memo(({ savedMnemonics, language, onDelete, onNav
         <div className="space-y-1">
           <h2 className="text-5xl font-black text-gray-900 dark:text-white tracking-tight">{t.title}</h2>
           <p className="text-gray-500 dark:text-gray-400 font-medium text-lg">{t.stats}</p>
-        </div>
-
-        {/* Premium Filters UX */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative group/filter">
-            <div className={`flex items-center gap-2 px-5 py-3 rounded-2xl border-2 transition-all ${
-              isPremium 
-                ? 'bg-white dark:bg-slate-900 border-gray-100 dark:border-slate-800' 
-                : 'bg-gray-50 dark:bg-slate-950 border-gray-200 dark:border-slate-900 opacity-60'
-            }`}>
-              <Filter size={16} className="text-gray-400" />
-              <span className="text-sm font-bold text-gray-600 dark:text-gray-400">{t.filters || 'Filters'}</span>
-              {!isPremium && <Lock size={12} className="text-accent" />}
-              <ChevronDown size={16} className="text-gray-400" />
-            </div>
-            
-            {!isPremium && (
-              <div 
-                onClick={() => onNavigate(AppView.SUBSCRIPTION)}
-                className="absolute inset-0 z-10 cursor-pointer"
-                title="Premium only"
-              />
-            )}
-          </div>
-
-          {!isPremium && (
-            <button 
-              onClick={() => onNavigate(AppView.SUBSCRIPTION)}
-              className="px-5 py-3 bg-accent/10 text-accent rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-accent hover:text-white transition-all border border-accent/20"
-            >
-              <Sparkles size={14} className="inline mr-2" />
-              {fullT.premium?.unlockFilters || 'UNLOCK FILTERS'}
-            </button>
-          )}
         </div>
       </div>
 

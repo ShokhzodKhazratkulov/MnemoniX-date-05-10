@@ -205,7 +205,12 @@ async function handlePerformTransaction(params: any, id: any, res: Response) {
   if (profile?.subscription_expires_at && new Date(profile.subscription_expires_at) > new Date()) newExpiry = new Date(profile.subscription_expires_at);
   newExpiry.setMonth(newExpiry.getMonth() + months);
 
-  await supabase.from('profiles').update({ subscription_tier: 'PREMIUM', subscription_expires_at: newExpiry.toISOString(), is_pro: true }).eq('id', payment.user_id);
+  await supabase.from('profiles').update({ 
+    subscription_tier: 'PREMIUM', 
+    subscription_expires_at: newExpiry.toISOString(), 
+    subscription_id: paymeId,
+    is_pro: true 
+  }).eq('id', payment.user_id);
   const now = Date.now();
   await supabase.from('payments').update({ 
     status: 'paid', 
@@ -227,7 +232,12 @@ async function handleCancelTransaction(params: any, id: any, res: Response) {
   }
 
   if (payment.status === 'paid') {
-    await supabase.from('profiles').update({ subscription_tier: 'FREE', subscription_expires_at: null, is_pro: false }).eq('id', payment.user_id);
+    await supabase.from('profiles').update({ 
+      subscription_tier: 'FREE', 
+      subscription_expires_at: null, 
+      subscription_id: null,
+      is_pro: false 
+    }).eq('id', payment.user_id);
     const now = Date.now();
     await supabase.from('payments').update({ 
       status: 'cancelled', 

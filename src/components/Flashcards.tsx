@@ -43,6 +43,7 @@ export const Flashcards = React.memo(({
   t,
   fullT
 }: Props) => {
+  const [isDownloading, setIsDownloading] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -235,150 +236,178 @@ export const Flashcards = React.memo(({
     return { groups, sortedDates };
   };
 
-  const normalizeText = useCallback((text: string) => {
-    if (!text) return "";
-    return text; // Preserve all characters
-  }, []);
-
-  // Helper to render text to an image for PDF support of special characters (Uzbek/Cyrillic)
-  const renderTextToImage = useCallback(async (text: string, fontSize: number = 24, isBold: boolean = false) => {
+  // Helper to render text to a high-resolution wrapped image for PDF support of all characters
+  const renderTextToImage = useCallback(async (text: string, fontSize: number = 12, isBold: boolean = false, maxWidth: number = 200) => {
+    const scale = 4; // High resolution
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
 
-    // Use a clean san-serif font that likely has good coverage on the user's system
-    const font = `${isBold ? '900' : '500'} ${fontSize}px "Inter", "Segoe UI", "Roboto", "Helvetica Neue", sans-serif`;
+    const font = `${isBold ? '700' : '400'} ${fontSize * scale}px "Inter", "Segoe UI", "Roboto", "Helvetica Neue", sans-serif`;
     ctx.font = font;
     
-    // Measure text to size canvas
-    const metrics = ctx.measureText(text);
-    const height = fontSize * 1.5;
-    canvas.width = metrics.width + 20;
-    canvas.height = height;
+    // Wrap text logic
+    const words = text.split(' ');
+    const lines: string[] = [];
+    let currentLine = words[0];
+
+    for (let i = 1; i < words.length; i++) {
+        const word = words[i];
+        const width = ctx.measureText(currentLine + " " + word).width;
+        if (width < maxWidth * scale) {
+            currentLine += " " + word;
+        } else {
+            lines.push(currentLine);
+            currentLine = word;
+        }
+    }
+    lines.push(currentLine);
+
+    const lineHeight = fontSize * 1.4 * scale;
+    const padding = 2 * scale;
+    canvas.width = maxWidth * scale;
+    canvas.height = (lines.length * lineHeight) + padding;
     
-    // Reset font after resizing canvas
     ctx.font = font;
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#1e293b'; // Slate-800
-    ctx.fillText(text, 10, height / 2);
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#1e293b';
     
-    return canvas.toDataURL('image/png');
+    lines.forEach((line, i) => {
+        ctx.fillText(line, 0, i * lineHeight);
+    });
+    
+    return {
+      data: canvas.toDataURL('image/png'),
+      width: canvas.width / scale,
+      height: canvas.height / scale
+    };
   }, []);
 
   const handleDownloadPDF = useCallback(async () => {
-    const doc = new jsPDF();
-    const { groups, sortedDates } = groupWordsByDate(filtered);
+    if (isDownloading) return;
+    setIsDownloading(true);
+    try {
+      const doc = new jsPDF();
+      const { groups, sortedDates } = groupWordsByDate(filtered);
 
-    // Draw Logo (Indigo square with white M)
-    doc.setFillColor(230, 126, 34); // Accent
-    doc.roundedRect(20, 12, 15, 15, 4, 4, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(18);
-    doc.setFont("helvetica", "bold");
-    doc.text("M", 27.5, 22.5, { align: "center" });
-
-    // Add Title
-    doc.setFontSize(24);
-    doc.setTextColor(30, 41, 59); // Slate-800
-    doc.text("Mnemonix", 40, 23);
-
-    let yPos = 40;
-
-    for (const date of sortedDates) {
-      const words = groups[date];
-      
-      // Check if we need a new page for the header
-      if (yPos > 240) {
-        doc.addPage();
-        yPos = 20;
-      }
-
-      doc.setFontSize(16);
+      // Header Brand
+      doc.setFillColor(230, 126, 34); // Accent
+      doc.roundedRect(20, 12, 15, 15, 4, 4, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(18);
       doc.setFont("helvetica", "bold");
-      doc.setTextColor(0, 0, 0);
-      doc.text(date, 20, yPos);
-      yPos += 5;
-      doc.setDrawColor(200, 200, 200);
-      doc.line(20, yPos, 190, yPos);
-      yPos += 10;
+      doc.text("M", 27.5, 22.5, { align: "center" });
 
-      // Since jspdf StandardFonts don't support Cyrillic/Uzbek well,
-      // we use an approach that works for lists: 
-      // We render each row carefully.
-      
-      const body = await Promise.all(words.map(async (w, i) => {
-        // For the word and meaning, we render to image to guarantee character support
-        const wordImg = await renderTextToImage(w.word, 20, true);
-        const meaningImg = await renderTextToImage(w.data.meaning, 18, false);
-        return {
-          index: (i + 1).toString(),
-          wordImg,
-          meaningImg,
-          rawWord: w.word,
-          rawMeaning: w.data.meaning
-        };
-      }));
+      doc.setFontSize(24);
+      doc.setTextColor(30, 41, 59);
+      doc.text("Mnemonix", 40, 23);
 
-      autoTable(doc, {
-        startY: yPos,
-        head: [[ '#', fullT.wordHeader, fullT.meaningHeader]],
-        body: body.map(b => [b.index, '', '']), // Placeholder for text, we'll draw images
-        theme: 'striped',
-        styles: {
-          minCellHeight: 15,
-          valign: 'middle'
-        },
-        headStyles: {
-          fillColor: [230, 126, 34],
-          textColor: [255, 255, 255],
-          fontSize: 13,
-          fontStyle: 'bold',
-        },
-        columnStyles: {
-          0: { cellWidth: 15, halign: 'center' },
-          1: { cellWidth: 75 },
-          2: { cellWidth: 80 },
-        },
-        margin: { left: 20, right: 20 },
-        didDrawCell: (data) => {
-          if (data.section === 'body' && data.column.index > 0) {
-            const rowIndex = data.row.index;
-            const item = body[rowIndex];
-            const img = data.column.index === 1 ? item.wordImg : item.meaningImg;
-            
-            if (img) {
-              const padding = 2;
-              const cellWidth = data.cell.width - (padding * 2);
-              const cellHeight = data.cell.height - (padding * 2);
+      let yPos = 40;
+
+      for (const date of sortedDates) {
+        const wordsByDate = groups[date];
+        
+        if (yPos > 240) {
+          doc.addPage();
+          yPos = 20;
+        }
+
+        doc.setFontSize(16);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(0, 0, 0);
+        doc.text(date, 20, yPos);
+        yPos += 5;
+        doc.setDrawColor(200, 200, 200);
+        doc.line(20, yPos, 190, yPos);
+        yPos += 10;
+
+        // Render each word and meaning to high-res images with wrapping
+        // maxWidth in points (75mm * 2.83)
+        const body = await Promise.all(wordsByDate.map(async (w, i) => {
+          const wordImg = await renderTextToImage(w.word, 11, true, 200);
+          const meaningImg = await renderTextToImage(w.data.meaning, 10, false, 230);
+          
+          // Calculate height in points (approx 1:1 if we use points as units)
+          const pdfHeight = Math.max(wordImg?.height || 0, meaningImg?.height || 0);
+
+          return {
+            index: (i + 1).toString(),
+            wordImg,
+            meaningImg,
+            height: pdfHeight + 4 // Padding
+          };
+        }));
+
+        autoTable(doc, {
+          startY: yPos,
+          head: [[ '#', fullT.wordHeader || 'Word', fullT.meaningHeader || 'Meaning']],
+          body: body.map(b => [b.index, '', '']),
+          theme: 'striped',
+          styles: {
+            valign: 'middle'
+          },
+          headStyles: {
+            fillColor: [230, 126, 34],
+            textColor: [255, 255, 255],
+            fontSize: 12,
+            fontStyle: 'bold',
+          },
+          columnStyles: {
+            0: { cellWidth: 15, halign: 'center' },
+            1: { cellWidth: 75 },
+            2: { cellWidth: 80 },
+          },
+          margin: { left: 20, right: 20 },
+          didParseCell: (data) => {
+            if (data.section === 'body') {
+                const item = body?.[data.row.index];
+                if (item) {
+                    // Convert points to approx mm if doc unit matches
+                    // jsPDF default unit is mm. 1 pt = 0.3527 mm.
+                    data.row.height = Math.max(data.row.height, item.height * 0.3527);
+                }
+            }
+          },
+          didDrawCell: (data) => {
+            if (data.section === 'body' && data.column.index > 0) {
+              const rowIndex = data.row.index;
+              const item = body?.[rowIndex];
+              if (!item) return;
               
-              // We need to calculate the aspect ratio to fit nicely
-              const canvas = document.createElement('canvas');
-              const tempCtx = canvas.getContext('2d');
-              // This is a bit slow because we reinvent metrics, but it works
-              // A better way is to store the width in the body array
+              const img = data.column.index === 1 ? item.wordImg : item.meaningImg;
               
-              doc.addImage(
-                img, 
-                'PNG', 
-                data.cell.x + padding, 
-                data.cell.y + padding, 
-                cellWidth, 
-                cellHeight,
-                undefined,
-                'FAST'
-              );
+              if (img) {
+                // img.width and img.height are in points
+                const drawWidth = img.width * 0.3527;
+                const drawHeight = img.height * 0.3527;
+
+                doc.addImage(
+                  img.data, 
+                  'PNG', 
+                  data.cell.x + 4, 
+                  data.cell.y + (data.cell.height - drawHeight) / 2, 
+                  drawWidth, 
+                  drawHeight,
+                  undefined,
+                  'FAST'
+                );
+              }
             }
           }
-        }
-      });
-      
-      yPos = (doc as any).lastAutoTable.finalY + 15;
-    }
+        });
+        
+        yPos = (doc as any).lastAutoTable.finalY + 15;
+      }
 
-    const startStr = dateFrom || 'start';
-    const endStr = dateTo || 'end';
-    doc.save(`words-${startStr}-${endStr}.pdf`);
-  }, [filtered, t, dateFrom, dateTo, renderTextToImage, fullT.wordHeader, fullT.meaningHeader]);
+      const startStr = dateFrom || 'start';
+      const endStr = dateTo || 'end';
+      doc.save(`words-${startStr}-${endStr}.pdf`);
+    } catch (err) {
+      console.error("PDF generation failed:", err);
+    } finally {
+      setIsDownloading(false);
+    }
+  }, [filtered, t, dateFrom, dateTo, renderTextToImage, fullT.wordHeader, fullT.meaningHeader, isDownloading]);
 
   // Reset flip state when moving to a new card
   useEffect(() => {
@@ -505,12 +534,16 @@ export const Flashcards = React.memo(({
             </button>
 
             <button 
-              disabled={filtered.length === 0}
+              disabled={filtered.length === 0 || isDownloading}
               onClick={handleDownloadPDF}
               className="w-full py-6 sm:py-8 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-800 text-white rounded-2xl sm:rounded-[2rem] font-black text-xl sm:text-3xl shadow-2xl shadow-emerald-500/20 transition-all active:scale-95 transform hover:-translate-y-1 flex items-center justify-center gap-3"
             >
-              <Download size={24} />
-              {t.download}
+              {isDownloading ? (
+                <div className="w-8 h-8 border-4 border-white/30 border-t-white animate-spin rounded-full" />
+              ) : (
+                <Download size={24} />
+              )}
+              {isDownloading ? '...' : t.download}
             </button>
           </div>
         </div>

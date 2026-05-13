@@ -101,6 +101,7 @@ export interface Profile {
   subscription_tier: SubscriptionTier;
   trial_started_at: string;
   subscription_expires_at: string | null;
+  subscription_id: string | null;
   device_id: string | null;
   daily_search_count: number;
   last_search_reset: string; // ISO connection to search reset logic
