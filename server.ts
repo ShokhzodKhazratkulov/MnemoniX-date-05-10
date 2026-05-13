@@ -14,7 +14,7 @@ console.log(`[Server] NODE_ENV: ${process.env.NODE_ENV}`);
 console.log(`[Server] PORT: ${process.env.PORT || 3000}`);
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 
 // Gemini API Setup
 const rawKeys = process.env.GEMINI_API_KEYS || "";
@@ -434,7 +434,7 @@ async function startServer() {
     app.use(express.static(distPath));
     
     // Catch-all for SPA
-    app.get("*", (req: Request, res: Response) => {
+    app.get("*all", (req: Request, res: Response) => {
       // Don't serve index.html for API routes that weren't found
       if (req.path.startsWith('/api/')) {
         return res.status(404).json({ error: "API route not found" });
