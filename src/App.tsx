@@ -443,10 +443,12 @@ export default function App() {
 
   const wordIndex = useMemo(() => {
     const index = new Map<string, SavedMnemonic>();
-    savedMnemonics.forEach(m => {
-      const key = `${m.word.toLowerCase()}-${m.language || contentLanguage}`;
-      index.set(key, m);
-    });
+    if (Array.isArray(savedMnemonics)) {
+      savedMnemonics.forEach(m => {
+        const key = `${m.word.toLowerCase()}-${m.language || contentLanguage}`;
+        index.set(key, m);
+      });
+    }
     return index;
   }, [savedMnemonics, contentLanguage]);
 
@@ -1005,7 +1007,7 @@ export default function App() {
     );
   }
 
-  const masteredCount = savedMnemonics.filter(m => m.isMastered).length;
+  const masteredCount = Array.isArray(savedMnemonics) ? savedMnemonics.filter(m => m.isMastered).length : 0;
 
   if (isAuthReady && user && isDeviceAuthorized === false) {
     return (

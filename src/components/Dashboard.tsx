@@ -27,8 +27,6 @@ interface Props {
 
 export const Dashboard = React.memo(({ savedMnemonics, language, onDelete, onNavigate, t, fullT, profile, currentTier = SubscriptionTier.FREE }: Props) => {
   const [showCelebration, setShowCelebration] = useState(false);
-  const [selectedLevel, setSelectedLevel] = useState<string>('all');
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
   const isPremium = currentTier === SubscriptionTier.PREMIUM || currentTier === SubscriptionTier.TRIAL;
 
@@ -87,13 +85,16 @@ export const Dashboard = React.memo(({ savedMnemonics, language, onDelete, onNav
       }))
       .sort((a, b) => a.timestamp - b.timestamp);
 
+    const maxChartCount = Math.max(...chartData.map(d => d.count), 10);
+    const chartDomain = [0, Math.ceil(maxChartCount / 10) * 10];
+
     const ieltsTargets: Record<number, number> = {
       5: 4000, 5.5: 4500, 6: 5000, 6.5: 6000, 7: 7000, 7.5: 8500, 8: 10000, 8.5: 11000, 9: 12000
     };
     const targetWords = ieltsTargets[profile?.ielts_goal || 7] || 7000;
-    const ieltsProgress = Math.min(100, (totalCount / targetWords) * 100);
+    const ieltsProgress = Math.min(100, (savedMnemonics.length / targetWords) * 100);
 
-    return { todayCount, totalCount, averageDaily, level, chartData, hardWords, targetWords, ieltsProgress };
+    return { todayCount, totalCount, averageDaily, level, chartData, hardWords, targetWords, ieltsProgress, chartDomain };
   }, [savedMnemonics, profile, t]);
 
   useEffect(() => {
@@ -245,40 +246,6 @@ export const Dashboard = React.memo(({ savedMnemonics, language, onDelete, onNav
           <h2 className="text-5xl font-black text-gray-900 dark:text-white tracking-tight">{t.title}</h2>
           <p className="text-gray-500 dark:text-gray-400 font-medium text-lg">{t.stats}</p>
         </div>
-
-        {/* Premium Filters UX */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative group/filter">
-            <div className={`flex items-center gap-2 px-5 py-3 rounded-2xl border-2 transition-all ${
-              isPremium 
-                ? 'bg-white dark:bg-slate-900 border-gray-100 dark:border-slate-800' 
-                : 'bg-gray-50 dark:bg-slate-950 border-gray-200 dark:border-slate-900 opacity-60'
-            }`}>
-              <Filter size={16} className="text-gray-400" />
-              <span className="text-sm font-bold text-gray-600 dark:text-gray-400">{t.filters || 'Filters'}</span>
-              {!isPremium && <Lock size={12} className="text-accent" />}
-              <ChevronDown size={16} className="text-gray-400" />
-            </div>
-            
-            {!isPremium && (
-              <div 
-                onClick={() => onNavigate(AppView.SUBSCRIPTION)}
-                className="absolute inset-0 z-10 cursor-pointer"
-                title="Premium only"
-              />
-            )}
-          </div>
-
-          {!isPremium && (
-            <button 
-              onClick={() => onNavigate(AppView.SUBSCRIPTION)}
-              className="px-5 py-3 bg-accent/10 text-accent rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-accent hover:text-white transition-all border border-accent/20"
-            >
-              <Sparkles size={14} className="inline mr-2" />
-              {fullT.premium?.unlockFilters || 'UNLOCK FILTERS'}
-            </button>
-          )}
-        </div>
       </div>
 
       {/* Stats Grid */}
@@ -379,8 +346,8 @@ export const Dashboard = React.memo(({ savedMnemonics, language, onDelete, onNav
                 axisLine={false} 
                 tickLine={true} 
                 tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 600 }}
-                domain={[0, 50]}
-                ticks={[0, 10, 20, 30, 40, 50]}
+                domain={stats.chartDomain}
+                allowDecimals={false}
                 width={40}
               />
               <Tooltip 

@@ -29,6 +29,6 @@ export const setupPersistence = () => {
     queryClient,
     persister,
     maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
-    buster: 'v5', // Increment to force clean start
+    buster: 'v6', // Increment to force clean start after potential corrupted cache
   });
 };

@@ -1,9 +1,7 @@
 
-import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../supabaseClient';
 import { SavedMnemonic, Profile, SubscriptionTier } from '../types';
-
-const WORDS_PER_PAGE = 50;
 
 export const useUserQueries = (userId?: string) => {
   const queryClient = useQueryClient();
@@ -26,12 +24,9 @@ export const useUserQueries = (userId?: string) => {
     return data as Profile;
   };
 
-  const fetchUserWordsPage = async ({ pageParam = 0 }) => {
+  const fetchAllUserWords = async () => {
     if (!userId) return [];
     
-    const from = pageParam * WORDS_PER_PAGE;
-    const to = from + WORDS_PER_PAGE - 1;
-
     const { data, error } = await supabase
       .from('user_words')
       .select(`
@@ -42,8 +37,7 @@ export const useUserQueries = (userId?: string) => {
         mnemonics (id, word, data, image_url, audio_url, language, nuance_data)
       `)
       .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .range(from, to);
+      .order('created_at', { ascending: false });
 
     if (error) throw error;
 
@@ -71,28 +65,21 @@ export const useUserQueries = (userId?: string) => {
     staleTime: 1000 * 60 * 10, // 10 min
   });
 
-  const wordsQuery = useInfiniteQuery({
+  const wordsQuery = useQuery({
     queryKey: ['user_words', userId],
-    queryFn: fetchUserWordsPage,
-    initialPageParam: 0,
-    getNextPageParam: (lastPage, allPages) => {
-      return lastPage.length === WORDS_PER_PAGE ? allPages.length : undefined;
-    },
+    queryFn: fetchAllUserWords,
     enabled: !!userId,
     staleTime: 1000 * 60 * 5, // 5 min
   });
 
-  const words = wordsQuery.data?.pages.flat() || [];
+  const words = Array.isArray(wordsQuery.data) ? wordsQuery.data : [];
 
   return {
     profile: profileQuery.data,
     profileLoading: profileQuery.isLoading,
     words,
     wordsLoading: wordsQuery.isLoading,
-    isFetchingMoreWords: wordsQuery.isFetchingNextPage,
-    hasMoreWords: !!wordsQuery.hasNextPage,
     refetchProfile: profileQuery.refetch,
-    refetchWords: wordsQuery.refetch,
-    loadMoreWords: wordsQuery.fetchNextPage
+    refetchWords: wordsQuery.refetch
   };
 };
