@@ -59,11 +59,16 @@ import { TermsOfService } from './components/TermsOfService';
 
 import { TRANSLATIONS } from './constants/translations';
 import { Profile as UserProfileType } from './types';
+import { useUserQueries } from './hooks/useUserQueries';
+import { useQueryClient } from '@tanstack/react-query';
+import { useSync, SyncOperation } from './context/SyncContext';
 
 /**
  * MAIN APPLICATION STATE & INITIALIZATION
  */
 export default function App() {
+  const queryClient = useQueryClient();
+  const { enqueue, isOnline } = useSync();
   // Authentication & User State
   const [user, setUser] = useState<any>(null); // Current Supabase Auth user object
   const [isGuest, setIsGuest] = useState(true); // Toggle for authenticated vs guest sessions
@@ -91,11 +96,13 @@ export default function App() {
   const [mnemonic, setMnemonic] = useState<MnemonicResponse | null>(null);
   const [mnemonicId, setMnemonicId] = useState<string | undefined>(undefined);
   const [imageUrl, setImageUrl] = useState('');
-  const [savedMnemonics, setSavedMnemonics] = useState<SavedMnemonic[]>([]);
   const [error, setError] = useState<string | null>(null);
   const { posts, fetchPosts } = usePosts();
   const [showFeedback, setShowFeedback] = useState(false);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+
+  // TanStack Query for User Data
+  const { profile: userProfile, words: savedMnemonics, refetchProfile, refetchWords } = useUserQueries(user?.id);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -103,11 +110,9 @@ export default function App() {
 
   useEffect(() => {
     const handleResize = () => {
-      // If the viewport height decreases by more than 25%, assume keyboard is open
       const threshold = window.screen.height * 0.75;
       setIsKeyboardOpen(window.innerHeight < threshold);
     };
-
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
@@ -116,20 +121,26 @@ export default function App() {
     setShowTour(false);
     if (user) {
       try {
-        await supabase
+        const { error } = await supabase
           .from('profiles')
           .update({ has_completed_tour: true })
           .eq('id', user.id);
-        setUserProfile(prev => prev ? { ...prev, has_completed_tour: true } as UserProfileType : null);
+        if (!error) refetchProfile();
       } catch (err) {
         console.error('Error updating tour status:', err);
       }
     }
   };
+
+  useEffect(() => {
+    if (user && userProfile && !userProfile.has_completed_tour && !showTour && view !== AppView.PERSONALIZATION) {
+      setShowTour(true);
+    }
+  }, [user, userProfile, showTour, view]);
+
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedMnemonicForReview, setSelectedMnemonicForReview] = useState<SavedMnemonic | null>(null);
-  const [userProfile, setUserProfile] = useState<UserProfileType | null>(null);
-  const { isPremium, isDeviceAuthorized, verifyDevice, resetDevice, incrementSearchCount, searchRemaining } = useMonetization(userProfile, setUserProfile);
+  const { currentTier, isPremium, isDeviceAuthorized, verifyDevice, resetDevice, incrementSearchCount, searchRemaining } = useMonetization(userProfile);
   const [isAudioLoading, setIsAudioLoading] = useState(false);
 
   const contentLanguage = useMemo(() => {
@@ -240,176 +251,6 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Fetch user words
-  const fetchUserWords = useCallback(async () => {
-    if (!user) {
-      setSavedMnemonics([]);
-      return;
-    }
-
-    // Try loading from cache first
-    const cacheKey = `mnemonix_user_words_${user.id}`;
-    const cached = localStorage.getItem(cacheKey);
-    if (cached && savedMnemonics.length === 0) {
-      try {
-        setSavedMnemonics(JSON.parse(cached));
-      } catch (e) {
-        console.error('Error parsing cached words:', e);
-      }
-    }
-
-    try {
-      const { data, error } = await supabase
-        .from('user_words')
-        .select(`
-          id,
-          created_at,
-          is_hard,
-          is_mastered,
-          mnemonics (id, word, data, image_url, audio_url, language, nuance_data)
-        `)
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(1000); // Sanity limit for scalability
-
-      if (error) throw error;
-
-      if (data) {
-        const formatted: SavedMnemonic[] = data.map((uw: any) => ({
-          id: uw.id,
-          mnemonicId: uw.mnemonics.id,
-          word: uw.mnemonics.word,
-          data: {
-            ...(uw.mnemonics.data as any),
-            nuance_data: uw.mnemonics.nuance_data || (uw.mnemonics.data as any).nuance_data
-          },
-          imageUrl: uw.mnemonics.image_url,
-          audio_url: uw.mnemonics.audio_url,
-          timestamp: new Date(uw.created_at).getTime(),
-          language: uw.mnemonics.language || contentLanguage,
-          isHard: uw.is_hard,
-          isMastered: uw.is_mastered
-        }));
-        setSavedMnemonics(formatted);
-        // Update cache safely - limit to 100 most recent and strip base64 images to save quota
-        const cacheData = formatted.slice(0, 100).map(m => ({
-          ...m,
-          imageUrl: m.imageUrl?.startsWith('data:') ? '' : m.imageUrl
-        }));
-        safeSetLocalStorage(cacheKey, JSON.stringify(cacheData));
-      }
-    } catch (err) {
-      console.error('Error fetching user words:', err);
-    }
-  }, [user, contentLanguage]);
-
-  // Fetch user profile
-  const fetchProfile = useCallback(async (userId: string) => {
-    // Try loading from cache first
-    const cacheKey = `mnemonix_user_profile_${userId}`;
-    const cached = localStorage.getItem(cacheKey);
-    if (cached && !userProfile) {
-      try {
-        setUserProfile(JSON.parse(cached));
-      } catch (e) {
-        console.error('Error parsing cached profile:', e);
-      }
-    }
-
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      if (error && error.code !== 'PGRST116') throw error;
-
-      if (data) {
-        // Sync email if missing
-        if (!data.email && user?.email) {
-          supabase.from('profiles').update({ email: user.email }).eq('id', userId).then(({ error }) => {
-            if (!error) setUserProfile(prev => prev ? { ...prev, email: user.email } : null);
-          });
-        }
-
-        // Lazy cleanup for expired subscriptions
-        if (data.subscription_tier === SubscriptionTier.PREMIUM && data.subscription_expires_at) {
-          const expiry = new Date(data.subscription_expires_at).getTime();
-          if (expiry <= Date.now()) {
-            console.log("Subscription expired, cleaning up...");
-            const { error: cleanupError } = await supabase
-              .from('profiles')
-              .update({ 
-                subscription_tier: SubscriptionTier.FREE,
-                is_pro: false,
-                subscription_id: null
-              })
-              .eq('id', userId);
-            
-            if (!cleanupError) {
-              data.subscription_tier = SubscriptionTier.FREE;
-              data.is_pro = false;
-              data.subscription_id = null;
-            }
-          }
-        }
-
-        setUserProfile(data);
-        // Update cache safely
-        safeSetLocalStorage(cacheKey, JSON.stringify(data));
-
-        // Sync app language with user's preferred language only if no UI language is saved
-        const savedLang = localStorage.getItem('mnemonix_ui_language');
-        if (data.preferred_language && !savedLang) {
-          setLanguage(data.preferred_language as Language);
-        }
-        if (!data.is_personalized && view !== AppView.PERSONALIZATION) {
-          setView(AppView.PERSONALIZATION);
-        } else if (data.is_personalized && !data.has_completed_tour && view !== AppView.PERSONALIZATION) {
-          setShowTour(true);
-        }
-      } else {
-        // Create profile if not exists
-        const { error: insertError } = await supabase
-          .from('profiles')
-          .insert({ 
-            id: userId, 
-            email: user?.email || '',
-            username: user?.email?.split('@')[0] || 'user', 
-            full_name: user?.user_metadata?.full_name || '',
-            avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${userId}`
-          });
-        
-        if (!insertError) {
-          fetchProfile(userId);
-        }
-      }
-    } catch (err) {
-      console.error('Error fetching profile:', err);
-    }
-  }, [user, view]);
-
-  const fetchUserData = useCallback(async (userId: string) => {
-    try {
-      await Promise.all([
-        fetchProfile(userId),
-        fetchUserWords()
-      ]);
-      // Verify device only if not already checked or if profile refreshed
-      // verifyDevice is async and internally checks profile
-      verifyDevice();
-    } catch (err) {
-      console.error('Error fetching user initial data:', err);
-    }
-  }, [fetchProfile, fetchUserWords]);
-
-  useEffect(() => {
-    if (isAuthReady && user) {
-      fetchUserData(user.id);
-    }
-  }, [user, isAuthReady, fetchUserData]);
-
   // Force sign-in for unauthenticated users
   useEffect(() => {
     if (isAuthReady && !user) {
@@ -419,10 +260,22 @@ export default function App() {
     }
   }, [user, view, isAuthReady]);
 
-  // Scroll to top on view change
+  // Sync app language with profile
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [view]);
+    if (userProfile?.preferred_language) {
+      const savedLang = localStorage.getItem('mnemonix_ui_language');
+      if (!savedLang) {
+        setLanguage(userProfile.preferred_language as Language);
+      }
+    }
+  }, [userProfile]);
+
+  // Initial device verification
+  useEffect(() => {
+    if (userProfile) {
+      verifyDevice();
+    }
+  }, [userProfile, verifyDevice]);
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isLangOpen, setIsLangOpen] = useState(false);
@@ -927,22 +780,11 @@ export default function App() {
             console.error('Error upserting user word:', upsertError);
             throw new Error(`Supabase UserWord Upsert Error: ${upsertError.message}`);
           }
-          fetchUserWords();
+          refetchWords();
         }
       } else if (!user && mnemonicData) {
-        // Guest mode - local state only
-        const newSavedMnemonic: SavedMnemonic = {
-          id: Math.random().toString(36).substr(2, 9),
-          mnemonicId: currentId || Math.random().toString(36).substr(2, 9),
-          word: mnemonicData.word,
-          data: mnemonicData,
-          imageUrl: img,
-          timestamp: Date.now(),
-          language: contentLanguage,
-          isHard: false,
-          isMastered: false
-        };
-        setSavedMnemonics(prev => [newSavedMnemonic, ...prev]);
+        // Guest mode - local state only (Not handled by TanStack Query for now, but kept for compatibility)
+        // Since savedMnemonics comes from the hook, it's read-only here
       }
     } catch (err: any) {
       console.error(err);
@@ -1004,7 +846,8 @@ export default function App() {
       
       if (pErr) throw pErr;
       
-      fetchPosts();
+      // Invalidate posts
+      queryClient.invalidateQueries({ queryKey: ['posts'] });
       setView(AppView.POSTS);
     } catch (err) {
       console.error('Error sharing mnemonic:', err);
@@ -1013,18 +856,17 @@ export default function App() {
 
   const handleDelete = useCallback(async (id: string) => {
     if (user) {
-      // Optimistic update
-      setSavedMnemonics(prev => prev.filter(m => m.id !== id));
-      
-      const { error } = await supabase.from('user_words').delete().eq('id', id);
-      if (error) {
-        // Rollback on error
-        fetchUserWords();
+      if (!isOnline) {
+        await enqueue('user_words', SyncOperation.DELETE, { id });
+        refetchWords(); // Invalidate local UI (optimistic)
+        return;
       }
-    } else {
-      setSavedMnemonics(prev => prev.filter(m => m.id !== id));
+      const { error } = await supabase.from('user_words').delete().eq('id', id);
+      if (!error) {
+        refetchWords();
+      }
     }
-  }, [user, fetchUserWords]);
+  }, [user, refetchWords, isOnline, enqueue]);
 
   const handleSavePostToLibrary = async (post: Post) => {
     try {
@@ -1074,6 +916,16 @@ export default function App() {
         const wordRecord = wordRecords?.[0];
 
         if (wordRecord) {
+          if (!isOnline) {
+            await enqueue('user_words', SyncOperation.CREATE, {
+              user_id: user.id,
+              word_id: wordRecord.id,
+              last_reviewed_at: new Date().toISOString(),
+              is_mastered: false
+            });
+            refetchWords();
+            return;
+          }
           const { error: upsertError } = await supabase
             .from('user_words')
             .upsert({
@@ -1083,22 +935,8 @@ export default function App() {
               is_mastered: false
             }, { onConflict: 'user_id,word_id' });
           
-          if (!upsertError) fetchUserWords();
+          if (!upsertError) refetchWords();
         }
-      } else {
-        // Guest mode
-        const newSavedMnemonic: SavedMnemonic = {
-          id: Math.random().toString(36).substr(2, 9),
-          mnemonicId: Math.random().toString(36).substr(2, 9),
-          word: post.word,
-          data: mnemonicData,
-          imageUrl: post.image_url || '',
-          timestamp: Date.now(),
-          language: language,
-          isHard: false,
-          isMastered: false
-        };
-        setSavedMnemonics(prev => [newSavedMnemonic, ...prev]);
       }
     } catch (err) {
       console.error("Save error:", err);
@@ -1122,33 +960,31 @@ export default function App() {
 
   const handleToggleHard = useCallback(async (id: string, isHard: boolean) => {
     if (user) {
-      // Optimistic update
-      setSavedMnemonics(prev => prev.map(m => m.id === id ? { ...m, isHard } : m));
-      
-      const { error } = await supabase.from('user_words').update({ is_hard: isHard }).eq('id', id);
-      if (error) {
-        // Rollback on error
-        fetchUserWords();
+      if (!isOnline) {
+        await enqueue('user_words', SyncOperation.UPDATE, { payload: { is_hard: isHard }, query: { id } });
+        refetchWords();
+        return;
       }
-    } else {
-      setSavedMnemonics(prev => prev.map(m => m.id === id ? { ...m, isHard } : m));
+      const { error } = await supabase.from('user_words').update({ is_hard: isHard }).eq('id', id);
+      if (!error) {
+        refetchWords();
+      }
     }
-  }, [user, fetchUserWords]);
+  }, [user, refetchWords, isOnline, enqueue]);
 
   const handleToggleMastered = useCallback(async (id: string, isMastered: boolean) => {
     if (user) {
-      // Optimistic update
-      setSavedMnemonics(prev => prev.map(m => m.id === id ? { ...m, isMastered } : m));
-
-      const { error } = await supabase.from('user_words').update({ is_mastered: isMastered }).eq('id', id);
-      if (error) {
-        // Rollback on error
-        fetchUserWords();
+      if (!isOnline) {
+        await enqueue('user_words', SyncOperation.UPDATE, { payload: { is_mastered: isMastered }, query: { id } });
+        refetchWords();
+        return;
       }
-    } else {
-      setSavedMnemonics(prev => prev.map(m => m.id === id ? { ...m, isMastered } : m));
+      const { error } = await supabase.from('user_words').update({ is_mastered: isMastered }).eq('id', id);
+      if (!error) {
+        refetchWords();
+      }
     }
-  }, [user, fetchUserWords]);
+  }, [user, refetchWords, isOnline, enqueue]);
 
 
   // Apply theme
@@ -1505,6 +1341,7 @@ export default function App() {
                 t={t.dashboard} 
                 fullT={t}
                 profile={userProfile}
+                currentTier={currentTier}
               />
             </motion.div>
           )}
@@ -1514,7 +1351,7 @@ export default function App() {
               <Personalization 
                 user={user} 
                 onComplete={() => {
-                  fetchProfile(user.id);
+                  refetchProfile();
                   setView(AppView.HOME);
                   // setShowTour(true); // Disabled for now
                 }} 
@@ -1566,12 +1403,13 @@ export default function App() {
                 }} 
                 onSignIn={() => navigateTo(AppView.AUTH)}
                 onNavigate={navigateTo}
-                onProfileUpdate={() => fetchProfile(user.id)}
+                onProfileUpdate={() => refetchProfile()}
                 language={language}
                 onLanguageChange={setLanguage}
                 profile={userProfile}
                 t={t.profile}
                 fullT={t}
+                currentTier={currentTier}
               />
             </motion.div>
           )}

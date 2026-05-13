@@ -43,9 +43,10 @@ interface Props {
   profile?: any;
   t: any;
   fullT: any;
+  currentTier?: SubscriptionTier;
 }
 
-export const Profile = React.memo(({ user, savedMnemonics, totalWords, masteredCount, userPostCount, userRemixCount, onSignOut, onSignIn, onNavigate, onProfileUpdate, onLanguageChange, language, profile, t, fullT }: Props) => {
+export const Profile = React.memo(({ user, savedMnemonics, totalWords, masteredCount, userPostCount, userRemixCount, onSignOut, onSignIn, onNavigate, onProfileUpdate, onLanguageChange, language, profile, t, fullT, currentTier = SubscriptionTier.FREE }: Props) => {
   const [activeModal, setActiveModal] = useState<'none' | 'searched' | 'mastered' | 'edit'>('none');
   const [isUpdating, setIsUpdating] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -221,9 +222,9 @@ export const Profile = React.memo(({ user, savedMnemonics, totalWords, masteredC
 
   const trialEndsAt = profile?.trial_started_at ? new Date(new Date(profile.trial_started_at).getTime() + 7 * 24 * 60 * 60 * 1000) : null;
   const subscriptionExpiresAt = profile?.subscription_expires_at ? new Date(profile.subscription_expires_at) : null;
-  const isTrialExpired = trialEndsAt ? trialEndsAt.getTime() < Date.now() : false;
-  const isPremium = profile?.subscription_tier === SubscriptionTier.PREMIUM;
-  const isTrial = !isPremium && trialEndsAt && trialEndsAt.getTime() > Date.now();
+  const isPremium = currentTier === SubscriptionTier.PREMIUM;
+  const isTrial = currentTier === SubscriptionTier.TRIAL;
+  const isTrialExpired = !isPremium && !isTrial && trialEndsAt && trialEndsAt.getTime() < Date.now();
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 space-y-8">
