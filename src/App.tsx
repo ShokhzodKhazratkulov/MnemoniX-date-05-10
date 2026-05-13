@@ -82,7 +82,6 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<AppView>(AppView.HOME); // Controls which main feature is visible
   const [viewHistory, setViewHistory] = useState<AppView[]>([]); // Navigation history for "Back" functionality
-  const [showTour, setShowTour] = useState(false); // Controls the onboarding experience
   const [state, setState] = useState<AppState>(AppState.IDLE); // High-level app state (IDLE, SEARCHING, RESULTS, etc.)
   const [isFlashcardDetailOpen, setIsFlashcardDetailOpen] = useState(false);
   const [isFlashcardReviewOpen, setIsFlashcardReviewOpen] = useState(false);
@@ -116,27 +115,6 @@ export default function App() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
-
-  const handleTourComplete = async () => {
-    setShowTour(false);
-    if (user) {
-      try {
-        const { error } = await supabase
-          .from('profiles')
-          .update({ has_completed_tour: true })
-          .eq('id', user.id);
-        if (!error) refetchProfile();
-      } catch (err) {
-        console.error('Error updating tour status:', err);
-      }
-    }
-  };
-
-  useEffect(() => {
-    if (user && userProfile && !userProfile.has_completed_tour && !showTour && view !== AppView.PERSONALIZATION) {
-      setShowTour(true);
-    }
-  }, [user, userProfile, showTour, view]);
 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedMnemonicForReview, setSelectedMnemonicForReview] = useState<SavedMnemonic | null>(null);
@@ -1710,18 +1688,6 @@ export default function App() {
             />
           )}
         </AnimatePresence>
-      </React.Suspense>
-
-      <React.Suspense fallback={null}>
-        {showTour && (
-          <QuickTour 
-            onComplete={handleTourComplete}
-            onSkip={handleTourComplete}
-            t={t}
-            currentView={view}
-            onNavigate={navigateTo}
-          />
-        )}
       </React.Suspense>
     </div>
   );
