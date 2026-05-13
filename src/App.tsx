@@ -38,24 +38,24 @@ import { decode, decodeAudioData } from './utils/audioUtils';
 import { safeSetLocalStorage } from './utils/storageUtils';
 
 // Components
-import { QuickTour } from './components/QuickTour';
-import { Dashboard } from './components/Dashboard';
-import { Flashcards } from './components/Flashcards';
-import { MnemonicCard } from './components/MnemonicCard';
-import { VoiceMode } from './components/VoiceMode';
-import { Auth } from './components/Auth';
-import { Profile } from './components/Profile';
-import AboutSection from './components/AboutSection';
-import { SearchPage } from './components/SearchPage';
-import { FeedbackModal } from './components/FeedbackModal';
-import { Posts } from './components/Posts';
-import { CategoriesPage } from './components/CategoriesPage';
-import { CategoryDetailPage } from './components/CategoryDetailPage';
-import { PracticePartner } from './components/PracticePartner';
-import { Personalization } from './components/Personalization';
-import { SubscriptionPage } from './components/SubscriptionPage';
-import { PrivacyPolicy } from './components/PrivacyPolicy';
-import { TermsOfService } from './components/TermsOfService';
+const QuickTour = React.lazy(() => import('./components/QuickTour').then(m => ({ default: m.QuickTour })));
+const Dashboard = React.lazy(() => import('./components/Dashboard').then(m => ({ default: m.Dashboard })));
+const Flashcards = React.lazy(() => import('./components/Flashcards').then(m => ({ default: m.Flashcards })));
+const MnemonicCard = React.lazy(() => import('./components/MnemonicCard').then(m => ({ default: m.MnemonicCard })));
+const VoiceMode = React.lazy(() => import('./components/VoiceMode').then(m => ({ default: m.VoiceMode })));
+const Auth = React.lazy(() => import('./components/Auth').then(m => ({ default: m.Auth })));
+const Profile = React.lazy(() => import('./components/Profile').then(m => ({ default: m.Profile })));
+const AboutSection = React.lazy(() => import('./components/AboutSection'));
+const SearchPage = React.lazy(() => import('./components/SearchPage').then(m => ({ default: m.SearchPage })));
+const FeedbackModal = React.lazy(() => import('./components/FeedbackModal').then(m => ({ default: m.FeedbackModal })));
+const Posts = React.lazy(() => import('./components/Posts').then(m => ({ default: m.Posts })));
+const CategoriesPage = React.lazy(() => import('./components/CategoriesPage').then(m => ({ default: m.CategoriesPage })));
+const CategoryDetailPage = React.lazy(() => import('./components/CategoryDetailPage').then(m => ({ default: m.CategoryDetailPage })));
+const PracticePartner = React.lazy(() => import('./components/PracticePartner').then(m => ({ default: m.PracticePartner })));
+const Personalization = React.lazy(() => import('./components/Personalization').then(m => ({ default: m.Personalization })));
+const SubscriptionPage = React.lazy(() => import('./components/SubscriptionPage').then(m => ({ default: m.SubscriptionPage })));
+const PrivacyPolicy = React.lazy(() => import('./components/PrivacyPolicy').then(m => ({ default: m.PrivacyPolicy })));
+const TermsOfService = React.lazy(() => import('./components/TermsOfService').then(m => ({ default: m.TermsOfService })));
 
 import { TRANSLATIONS } from './constants/translations';
 import { Profile as UserProfileType } from './types';
@@ -554,74 +554,80 @@ export default function App() {
           setLoadingMessage(t.loadingMnemonic);
           mnemonicData = await gemini.getMnemonic(correctedWord, contentLanguage);
           
-          setLoadingMessage(t.loadingImage);
-          const base64Image = await gemini.generateImage(mnemonicData.imagePrompt);
+          setLoadingMessage(t.loadingAssets || 'Generating visual & audio aids...');
           
-          let storedImageUrl = '';
-          if (base64Image) {
-            try {
-              const imageBlob = await (await fetch(base64Image)).blob();
-              
-              // Compress image before upload
-              const options = {
-                maxSizeMB: 0.2, // Max size 200KB
-                maxWidthOrHeight: 1024,
-                useWebWorker: true,
-                fileType: 'image/webp' // Use webp for better compression
-              };
-              
-              const compressedFile = await imageCompression(imageBlob as File, options);
-              const fileName = `${correctedWord}-${contentLanguage}-${Date.now()}.webp`;
-              
-              const { error: uploadError } = await supabase.storage
-                .from('mnemonic_assets')
-                .upload(`images/${fileName}`, compressedFile, { upsert: true });
-              
-              if (!uploadError) {
-                storedImageUrl = getStorageUrl('mnemonic_assets', `images/${fileName}`);
-              } else {
-                console.error('Image upload error:', uploadError);
-              }
-            } catch (imgErr) {
-              console.error('Error processing image for upload:', imgErr);
-            }
-          }
+          // Parallelize asset generation
+          const [base64Image, base64Audio, nuanceData] = await Promise.all([
+            gemini.generateImage(mnemonicData.imagePrompt).catch(err => {
+              console.error('Image gen failed:', err);
+              return '';
+            }),
+            (async () => {
+              const ttsText = `${mnemonicData.word}. ${mnemonicData.meaning}. ${mnemonicData.phoneticLink}. ${mnemonicData.imagination}. ${mnemonicData.connectorSentence}`;
+              return gemini.generateTTS(ttsText, contentLanguage).catch(err => {
+                console.error('TTS gen failed:', err);
+                return '';
+              });
+            })(),
+            gemini.generateNuance(mnemonicData.word, mnemonicData.synonyms, contentLanguage).catch(err => {
+              console.error('Nuance gen failed:', err);
+              return null;
+            })
+          ]);
 
-          // Generate and upload audio
-          const ttsText = `${mnemonicData.word}. ${mnemonicData.meaning}. ${mnemonicData.phoneticLink}. ${mnemonicData.imagination}. ${mnemonicData.connectorSentence}`;
-          const base64Audio = await gemini.generateTTS(ttsText, contentLanguage);
-          
-          if (base64Audio) {
-            try {
-              const audioResponse = await fetch(`data:audio/wav;base64,${base64Audio}`);
-              const audioBlob = await audioResponse.blob();
-              const audioFileName = `${correctedWord}-${contentLanguage}-${Date.now()}.wav`;
-              const { error: audioUploadError } = await supabase.storage
-                .from('mnemonic_assets')
-                .upload(`audio/${audioFileName}`, audioBlob, { upsert: true });
-              
-              if (!audioUploadError) {
-                storedAudioUrl = getStorageUrl('mnemonic_assets', `audio/${audioFileName}`);
-              } else {
-                console.error('Audio upload error:', audioUploadError);
+          mnemonicData.nuance_data = nuanceData;
+          let storedImageUrl = '';
+          let storedAudioUrl = '';
+
+          // Parallelize uploads
+          await Promise.all([
+            // Image processing and upload
+            (async () => {
+              if (base64Image) {
+                try {
+                  const imageBlob = await (await fetch(base64Image)).blob();
+                  const options = {
+                    maxSizeMB: 0.2,
+                    maxWidthOrHeight: 1024,
+                    useWebWorker: true,
+                    fileType: 'image/webp'
+                  };
+                  const compressedFile = await imageCompression(imageBlob as File, options);
+                  const fileName = `${correctedWord}-${contentLanguage}-${Date.now()}.webp`;
+                  const { error: uploadError } = await supabase.storage
+                    .from('mnemonic_assets')
+                    .upload(`images/${fileName}`, compressedFile, { upsert: true });
+                  if (!uploadError) {
+                    storedImageUrl = getStorageUrl('mnemonic_assets', `images/${fileName}`);
+                  }
+                } catch (imgErr) {
+                  console.error('Image processing error:', imgErr);
+                }
               }
-            } catch (audioErr) {
-              console.error('Error processing audio for upload:', audioErr);
-            }
-          }
+            })(),
+            // Audio processing and upload
+            (async () => {
+              if (base64Audio) {
+                try {
+                  const audioResponse = await fetch(`data:audio/wav;base64,${base64Audio}`);
+                  const audioBlob = await audioResponse.blob();
+                  const audioFileName = `${correctedWord}-${contentLanguage}-${Date.now()}.wav`;
+                  const { error: audioUploadError } = await supabase.storage
+                    .from('mnemonic_assets')
+                    .upload(`audio/${audioFileName}`, audioBlob, { upsert: true });
+                  if (!audioUploadError) {
+                    storedAudioUrl = getStorageUrl('mnemonic_assets', `audio/${audioFileName}`);
+                  }
+                } catch (audioErr) {
+                  console.error('Audio processing error:', audioErr);
+                }
+              }
+            })()
+          ]);
 
           img = storedImageUrl || base64Image;
           audio = storedAudioUrl || (base64Audio ? `data:audio/wav;base64,${base64Audio}` : '');
           mnemonicData.audioUrl = audio;
-
-          // Generate Deep Dive (Nuance) data automatically for new words
-          setLoadingMessage(t.loadingNuance || 'Analyzing linguistic nuances...');
-          try {
-            const nuanceData = await gemini.generateNuance(mnemonicData.word, mnemonicData.synonyms, contentLanguage);
-            mnemonicData.nuance_data = nuanceData;
-          } catch (nuanceErr) {
-            console.error('Error generating nuance for new word:', nuanceErr);
-          }
 
           // Save to global library
           const { data: newMnemonicList, error: insertError } = await supabase.from('mnemonics').insert({
@@ -1203,7 +1209,12 @@ export default function App() {
         )}
 
       <main className={view === AppView.AUTH ? "w-full h-screen overflow-hidden" : "max-w-7xl mx-auto px-4 sm:px-8 py-4 sm:py-8 pb-24 md:pb-12"}>
-        <AnimatePresence mode="wait">
+        <React.Suspense fallback={
+          <div className="flex items-center justify-center p-20">
+            <Loader2 className="w-8 h-8 text-accent animate-spin" />
+          </div>
+        }>
+          <AnimatePresence mode="wait">
           {view === AppView.AUTH && (
             <motion.div key="auth" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               <Auth onClose={() => goBack()} onSuccess={() => { setIsGuest(false); setView(AppView.HOME); }} t={t} />
@@ -1597,7 +1608,8 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
-      </main>
+      </React.Suspense>
+    </main>
 
       {/* Floating Practice Button */}
       <AnimatePresence>
@@ -1681,34 +1693,36 @@ export default function App() {
       )}
 
       {/* Modals */}
-      <AnimatePresence>
-        {state === AppState.VOICE_MODE && (
-          <VoiceMode 
-            onClose={() => setState(AppState.IDLE)} 
-            uiLanguage={language} 
-            contentLanguage={userProfile?.preferred_language || Language.UZBEK}
-          />
-        )}
-        {showFeedback && (
-          <FeedbackModal 
-            onClose={() => setShowFeedback(false)} 
-            language={language} 
-            receiverEmail="khazratkulovshokhzod@gmail.com" 
-          />
-        )}
-      </AnimatePresence>
+      <React.Suspense fallback={null}>
+        <AnimatePresence>
+          {state === AppState.VOICE_MODE && (
+            <VoiceMode 
+              onClose={() => setState(AppState.IDLE)} 
+              uiLanguage={language} 
+              contentLanguage={userProfile?.preferred_language || Language.UZBEK}
+            />
+          )}
+          {showFeedback && (
+            <FeedbackModal 
+              onClose={() => setShowFeedback(false)} 
+              language={language} 
+              receiverEmail="khazratkulovshokhzod@gmail.com" 
+            />
+          )}
+        </AnimatePresence>
+      </React.Suspense>
 
-      {/* Quick Tour - Disabled for now
-      {showTour && (
-        <QuickTour 
-          onComplete={handleTourComplete}
-          onSkip={handleTourComplete}
-          t={t}
-          currentView={view}
-          onNavigate={navigateTo}
-        />
-      )}
-      */}
+      <React.Suspense fallback={null}>
+        {showTour && (
+          <QuickTour 
+            onComplete={handleTourComplete}
+            onSkip={handleTourComplete}
+            t={t}
+            currentView={view}
+            onNavigate={navigateTo}
+          />
+        )}
+      </React.Suspense>
     </div>
   );
 }
