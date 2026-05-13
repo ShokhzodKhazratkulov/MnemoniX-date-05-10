@@ -281,11 +281,6 @@ export const Profile = React.memo(({ user, savedMnemonics, totalWords, masteredC
                 {(t.premium?.premiumEnds || 'PREMIUM ENDS')}: {subscriptionExpiresAt.toLocaleDateString()}
               </span>
             )}
-            {user && isPremium && profile?.subscription_id && (
-              <span className="px-4 py-1.5 bg-slate-50 text-slate-600 rounded-full text-[10px] font-black tracking-widest border border-slate-100 uppercase">
-                ID: {profile.subscription_id}
-              </span>
-            )}
           </div>
         </div>
       </motion.div>
