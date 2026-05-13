@@ -8,6 +8,10 @@ import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
 
+console.log("[Server] Starting initialization...");
+console.log(`[Server] NODE_ENV: ${process.env.NODE_ENV}`);
+console.log(`[Server] PORT: ${process.env.PORT || 3000}`);
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -422,13 +426,35 @@ async function startServer() {
     const distPath = path.join(process.cwd(), "dist");
     console.log(`[Server] Serving static files from: ${distPath}`);
     app.use(express.static(distPath));
-    app.get("(.*)", (req: Request, res: Response) => {
+    
+    // Catch-all for SPA
+    app.get("*", (req: Request, res: Response) => {
+      // Don't serve index.html for API routes that weren't found
+      if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ error: "API route not found" });
+      }
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
-  app.listen(Number(PORT), "0.0.0.0", () => {
+  // Global Error Handler for uncaught errors in middlewares/routes
+  app.use((err: any, req: Request, res: Response, next: any) => {
+    console.error("[Server] Unhandled Error:", err);
+    if (res.headersSent) {
+      return next(err);
+    }
+    res.status(500).json({ 
+      error: "Internal Server Error", 
+      details: process.env.NODE_ENV !== 'production' ? err.message : undefined 
+    });
+  });
+
+  const server = app.listen(Number(PORT), "0.0.0.0", () => {
     console.log(`[Server] Listening on 0.0.0.0:${PORT} (NODE_ENV=${process.env.NODE_ENV})`);
+  });
+
+  server.on('error', (err) => {
+    console.error('[Server] Critical error:', err);
   });
 }
 
