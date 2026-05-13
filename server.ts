@@ -420,14 +420,15 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
+    console.log(`[Server] Serving static files from: ${distPath}`);
     app.use(express.static(distPath));
-    app.get("*all", (req: Request, res: Response) => {
+    app.get("(.*)", (req: Request, res: Response) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
   app.listen(Number(PORT), "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`[Server] Listening on 0.0.0.0:${PORT} (NODE_ENV=${process.env.NODE_ENV})`);
   });
 }
 
